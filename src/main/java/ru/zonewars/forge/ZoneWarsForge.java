@@ -1109,9 +1109,7 @@ public final class ZoneWarsForge {
         }
 
         private void sendState(ServerPlayer player) {
-            if (true) {
-                ZoneWarsNetwork.sendState(player, stateFor(player).toString());
-            }
+            ZoneWarsNetwork.sendState(player, stateFor(player).toString());
         }
 
         private void broadcastState(MinecraftServer server) {
@@ -1132,11 +1130,16 @@ public final class ZoneWarsForge {
                 String type = parts[0].toUpperCase(Locale.ROOT);
                 int x = Integer.parseInt(parts[1]);
                 int z = Integer.parseInt(parts[2]);
+                if (Math.abs(x) > 30_000_000 || Math.abs(z) > 30_000_000) {
+                    return;
+                }
                 Optional<TeamColor> team = matches.teamOf(player.getUUID());
                 Optional<Squad> squad = squads.squadOf(player.getUUID());
                 if (team.isEmpty()) {
                     return;
                 }
+                markers.removeIf(marker -> marker.label().equals(player.getName().getString())
+                    && !marker.type().equals("WAYPOINT"));
                 markers.add(new TacticalMarker(type, team.get(), squad.map(Squad::id), player.getName().getString(), x, z, System.currentTimeMillis() + 35_000L));
             } catch (NumberFormatException ignored) {
             }
@@ -2349,7 +2352,20 @@ public final class ZoneWarsForge {
             if (dir == null) {
                 return Optional.empty();
             }
-            Path path = dir.resolve(name);
+            Path primary = dir.resolve(name);
+            Optional<JsonObject> loaded = readObjectPath(primary);
+            if (loaded.isPresent()) {
+                return loaded;
+            }
+            Path backup = dir.resolve(name + ".bak");
+            Optional<JsonObject> recovered = readObjectPath(backup);
+            if (recovered.isPresent()) {
+                System.err.println(PREFIX + "Recovered " + name + " from backup.");
+            }
+            return recovered;
+        }
+
+        private Optional<JsonObject> readObjectPath(Path path) {
             if (!Files.isRegularFile(path)) {
                 return Optional.empty();
             }
@@ -3166,35 +3182,45 @@ public final class ZoneWarsForge {
 
     private static final class TaczEvents {
         private static void register(Consumer<Object> shoot, Consumer<Object> hurtPre, Consumer<Object> hurtPost, Consumer<Object> kill) {
-            registerCallback("com.tacz.guns.api.event.common.GunShootEvent", "CALLBACK", "com.tacz.guns.api.event.common.GunShootEvent$Callback", shoot);
-            registerCallback("com.tacz.guns.api.event.common.GunFireEvent", "CALLBACK", "com.tacz.guns.api.event.common.GunFireEvent$Callback", shoot);
-            registerCallback("com.tacz.guns.api.event.common.EntityHurtByGunEvent", "PRE", "com.tacz.guns.api.event.common.EntityHurtByGunEvent$PreCallBack", hurtPre);
-            registerCallback("com.tacz.guns.api.event.common.EntityHurtByGunEvent", "POST", "com.tacz.guns.api.event.common.EntityHurtByGunEvent$PostCallBack", hurtPost);
-            registerCallback("com.tacz.guns.api.event.common.EntityKillByGunEvent", "CALLBACK", "com.tacz.guns.api.event.common.EntityKillByGunEvent$Callback", kill);
+            registerForgeEvent("com.tacz.guns.api.event.common.GunShootEvent", shoot);
+            registerForgeEvent("com.tacz.guns.api.event.common.GunFireEvent", shoot);
+            registerForgeEvent("com.tacz.guns.api.event.common.EntityHurtByGunEvent$Pre", hurtPre);
+            registerForgeEvent("com.tacz.guns.api.event.common.EntityHurtByGunEvent$Post", hurtPost);
+            registerForgeEvent("com.tacz.guns.api.event.common.EntityKillByGunEvent", kill);
         }
 
-        private static void registerCallback(String eventClassName, String fieldName, String callbackClassName, Consumer<Object> consumer) {
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static void registerForgeEvent(String eventClassName, Consumer<Object> consumer) {
             try {
                 Class<?> eventClass = Class.forName(eventClassName);
-                Class<?> callbackClass = Class.forName(callbackClassName);
-                Field field = eventClass.getField(fieldName);
-                Object event = field.get(null);
-                Object proxy = Proxy.newProxyInstance(callbackClass.getClassLoader(), new Class<?>[]{callbackClass}, (ignored, method, args) -> {
-                    if ("post".equals(method.getName()) && args != null && args.length == 1) {
-                        consumer.accept(args[0]);
-                    }
-                    return null;
-                });
-                invoke(event, "register", proxy);
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-                // TaCZ is a runtime dependency. If it changes, ZoneWars still loads and vanilla/Fabric events keep working.
+                Method addListener = Arrays.stream(MinecraftForge.EVENT_BUS.getClass().getMethods())
+                    .filter(method -> method.getName().equals("addListener"))
+                    .filter(method -> method.getParameterCount() == 4)
+                    .filter(method -> method.getParameterTypes()[2] == Class.class)
+                    .findFirst()
+                    .orElseThrow(() -> new NoSuchMethodException("Forge EventBus addListener overload"));
+                Class<? extends Enum> priorityType = (Class<? extends Enum>) addListener.getParameterTypes()[0].asSubclass(Enum.class);
+                Object normalPriority = Enum.valueOf(priorityType, "NORMAL");
+                addListener.invoke(MinecraftForge.EVENT_BUS, normalPriority, true, eventClass, consumer);
+                System.out.println(PREFIX + "Registered TaCZ Forge event: " + eventClassName);
+            } catch (ReflectiveOperationException | RuntimeException exception) {
+                System.err.println(PREFIX + "Could not register TaCZ event " + eventClassName + ": " + exception.getMessage());
             }
         }
 
         private static boolean isServer(Object event) {
             Object side = invokeOrNull(event, "getLogicalSide");
             Object value = side == null ? null : invokeOrNull(side, "isServer");
-            return Boolean.TRUE.equals(value);
+            if (value instanceof Boolean result) {
+                return result;
+            }
+            for (String getter : List.of("getShooter", "getAttacker", "getHurtEntity", "getKilledEntity")) {
+                Entity entity = entity(event, getter);
+                if (entity != null) {
+                    return !entity.level().isClientSide;
+                }
+            }
+            return false;
         }
 
         private static Entity entity(Object event, String getter) {
