@@ -61,7 +61,7 @@ public final class ZoneWarsHud {
         drawTopBar(graphics, client, snapshot);
         int nextY = drawSquad(graphics, client, snapshot);
         drawKillFeed(graphics, client, snapshot, nextY + 8);
-        drawMiniMap(graphics, client, snapshot);
+        if (!ru.zonewars.client.map.XaeroWaypointBridge.active()) drawMiniMap(graphics, client, snapshot);
         drawHitMarker(graphics, client, snapshot);
     }
 
