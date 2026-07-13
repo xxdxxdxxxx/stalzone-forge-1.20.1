@@ -93,7 +93,7 @@ public final class ZoneWarsForge {
                     .then(Commands.literal("blue").executes(context -> join(context.getSource(), TeamColor.BLUE)))
                     .then(Commands.literal("auto").executes(context -> joinAuto(context.getSource())))
                     .then(Commands.argument("team", StringArgumentType.word()).executes(context ->
-                        join(context.getSource(), TeamColor.parse(StringArgumentType.getString(context, "team"))))))
+                        joinNamed(context.getSource(), StringArgumentType.getString(context, "team")))))
                 .then(Commands.literal("leave").executes(context -> leave(context.getSource())))
                 .then(Commands.literal("start").requires(source -> source.hasPermission(2)).executes(context -> start(context.getSource())))
                 .then(Commands.literal("stop").requires(source -> source.hasPermission(2)).executes(context -> stop(context.getSource())))
@@ -370,6 +370,15 @@ public final class ZoneWarsForge {
         return join(source, matches.autoTeam());
     }
 
+    private int joinNamed(CommandSourceStack source, String rawTeam) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        try {
+            return join(source, TeamColor.parse(rawTeam));
+        } catch (IllegalArgumentException exception) {
+            error(source, "Unknown team. Use red, blue or auto.");
+            return 0;
+        }
+    }
+
     private int leave(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         matches.leave(player);
@@ -469,6 +478,10 @@ public final class ZoneWarsForge {
         }
         if (!matches.isNearShop(player, 6.0)) {
             tell(player, "Move closer to a saved shop location.");
+            return false;
+        }
+        if (item.kind() == ShopKind.MEDKIT && player.getHealth() >= player.getMaxHealth()) {
+            tell(player, "You are already at full health.");
             return false;
         }
         if (!economy.spend(player.getUUID(), item.price())) {
@@ -1604,7 +1617,11 @@ public final class ZoneWarsForge {
             if (worldName == null || worldName.isBlank() || worldName.equals("world")) {
                 return Optional.of(server.overworld());
             }
-            ResourceKey<Level> key = ResourceKey.create(Registries.DIMENSION, new ResourceLocation(worldName));
+            ResourceLocation worldId = ResourceLocation.tryParse(worldName);
+            if (worldId == null) {
+                return Optional.empty();
+            }
+            ResourceKey<Level> key = ResourceKey.create(Registries.DIMENSION, worldId);
             return Optional.ofNullable(server.getLevel(key));
         }
 
@@ -1641,6 +1658,7 @@ public final class ZoneWarsForge {
     }
 
     private static final class EconomyService {
+        private static final int MAX_BALANCE = 1_000_000;
         private final int startingMoney;
         private final int captureIncomePerSecond;
         private final int killReward;
@@ -1663,7 +1681,8 @@ public final class ZoneWarsForge {
         }
 
         private void add(UUID playerId, int amount) {
-            balances.merge(playerId, Math.max(0, amount), Integer::sum);
+            long next = (long) balance(playerId) + Math.max(0, amount);
+            balances.put(playerId, (int) Math.min(MAX_BALANCE, next));
         }
 
         private boolean spend(UUID playerId, int amount) {
@@ -3147,8 +3166,12 @@ public final class ZoneWarsForge {
     private static final class TaczItems {
         private static ItemStack gun(String gunId, int ammoCount, Object registryLookup) {
             try {
+                ResourceLocation id = ResourceLocation.tryParse(gunId);
+                if (id == null) {
+                    return ItemStack.EMPTY;
+                }
                 Object builder = create("com.tacz.guns.api.item.builder.GunItemBuilder");
-                invoke(builder, "setId", new ResourceLocation(gunId));
+                invoke(builder, "setId", id);
                 invoke(builder, "setAmmoCount", ammoCount);
                 invoke(builder, "setAmmoInBarrel", true);
                 invoke(builder, "setFireMode", enumValue("com.tacz.guns.api.item.gun.FireMode", "AUTO"));
@@ -3160,8 +3183,12 @@ public final class ZoneWarsForge {
 
         private static ItemStack ammo(String ammoId, int count) {
             try {
+                ResourceLocation id = ResourceLocation.tryParse(ammoId);
+                if (id == null) {
+                    return ItemStack.EMPTY;
+                }
                 Object builder = create("com.tacz.guns.api.item.builder.AmmoItemBuilder");
-                invoke(builder, "setId", new ResourceLocation(ammoId));
+                invoke(builder, "setId", id);
                 invoke(builder, "setCount", count);
                 return (ItemStack) invoke(builder, "build");
             } catch (ReflectiveOperationException | RuntimeException ex) {

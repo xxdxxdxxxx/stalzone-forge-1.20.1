@@ -17,7 +17,7 @@ public final class ZoneWarsNetwork {
     private static final int MAX_ACTION_LENGTH = 256;
     private static final int MAX_STATE_LENGTH = 262_144;
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-        new ResourceLocation(ZoneWarsForge.MOD_ID, "main"),
+        ResourceLocation.tryParse(ZoneWarsForge.MOD_ID + ":main"),
         () -> PROTOCOL,
         PROTOCOL::equals,
         PROTOCOL::equals
