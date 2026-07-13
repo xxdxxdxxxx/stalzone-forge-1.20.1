@@ -1740,8 +1740,10 @@ public final class ZoneWarsForge {
             if (attacker.equals(victim)) {
                 return;
             }
-            String hitKey = attacker.getUUID() + ">" + victim.getUUID() + ":" + damage;
+            String hitKey = attacker.getUUID() + ">" + victim.getUUID();
             Instant now = Instant.now();
+            recentDamageHits.entrySet().removeIf(entry ->
+                Duration.between(entry.getValue(), now).toMillis() > 2_000L);
             Instant recent = recentDamageHits.get(hitKey);
             if (recent != null && Duration.between(recent, now).toMillis() < DAMAGE_DEDUP_WINDOW_MILLIS) {
                 return;
@@ -1757,6 +1759,8 @@ public final class ZoneWarsForge {
                 return false;
             }
             Instant now = Instant.now();
+            recentVictimKills.entrySet().removeIf(entry ->
+                Duration.between(entry.getValue(), now).toSeconds() > 10L);
             Instant recent = recentVictimKills.get(victim.getUUID());
             if (recent != null && Duration.between(recent, now).toMillis() < 900) {
                 return false;
@@ -1870,7 +1874,8 @@ public final class ZoneWarsForge {
         }
 
         private void addDamage(int amount) {
-            damage += amount;
+            long next = (long) damage + Math.max(0, amount);
+            damage = (int) Math.min(Integer.MAX_VALUE, next);
         }
 
         private int kills() {
@@ -2198,21 +2203,24 @@ public final class ZoneWarsForge {
                         stringValue(point, "id", "point" + points.size()),
                         stringValue(point, "displayName", stringValue(point, "id", "Point")),
                         location(object(point, "location"), fallback.capturePoints().get(Math.min(points.size(), fallback.capturePoints().size() - 1)).location()),
-                        doubleValue(point, "radius", 9.0)
+                        boundedDouble(point, "radius", 9.0, 1.0, 128.0)
                     ));
                 }
                 if (points.isEmpty()) {
                     points = fallback.capturePoints();
                 }
+                int maxPlayers = boundedInt(root, "maxPlayersPerTeam", fallback.maxPlayersPerTeam(), 1, 100);
+                int minPlayers = Math.min(maxPlayers,
+                    boundedInt(root, "minPlayersPerTeam", fallback.minPlayersPerTeam(), 0, 100));
                 return new ArenaData(
-                    intValue(root, "minPlayersPerTeam", fallback.minPlayersPerTeam()),
-                    intValue(root, "maxPlayersPerTeam", fallback.maxPlayersPerTeam()),
-                    intValue(root, "preparationSeconds", fallback.preparationSeconds()),
-                    intValue(root, "matchSeconds", fallback.matchSeconds()),
-                    intValue(root, "overtimeSeconds", fallback.overtimeSeconds()),
-                    intValue(root, "endScreenSeconds", fallback.endScreenSeconds()),
-                    intValue(root, "captureSeconds", fallback.captureSeconds()),
-                    intValue(root, "pointsPerSecond", fallback.pointsPerSecond()),
+                    minPlayers,
+                    maxPlayers,
+                    boundedInt(root, "preparationSeconds", fallback.preparationSeconds(), 0, 600),
+                    boundedInt(root, "matchSeconds", fallback.matchSeconds(), 60, 21_600),
+                    boundedInt(root, "overtimeSeconds", fallback.overtimeSeconds(), 0, 3_600),
+                    boundedInt(root, "endScreenSeconds", fallback.endScreenSeconds(), 0, 300),
+                    boundedInt(root, "captureSeconds", fallback.captureSeconds(), 1, 600),
+                    boundedInt(root, "pointsPerSecond", fallback.pointsPerSecond(), 0, 1_000),
                     location(object(root, "redSpawn"), fallback.redSpawn()),
                     location(object(root, "blueSpawn"), fallback.blueSpawn()),
                     List.copyOf(shops),
@@ -2440,11 +2448,11 @@ public final class ZoneWarsForge {
             }
             return new LocationSpec(
                 stringValue(object, "world", fallback.world()),
-                doubleValue(object, "x", fallback.x()),
-                doubleValue(object, "y", fallback.y()),
-                doubleValue(object, "z", fallback.z()),
-                (float) doubleValue(object, "yaw", fallback.yaw()),
-                (float) doubleValue(object, "pitch", fallback.pitch())
+                boundedDouble(object, "x", fallback.x(), -30_000_000.0, 30_000_000.0),
+                boundedDouble(object, "y", fallback.y(), -2_048.0, 2_048.0),
+                boundedDouble(object, "z", fallback.z(), -30_000_000.0, 30_000_000.0),
+                (float) boundedDouble(object, "yaw", fallback.yaw(), -360.0, 360.0),
+                (float) boundedDouble(object, "pitch", fallback.pitch(), -90.0, 90.0)
             );
         }
 
@@ -2471,6 +2479,26 @@ public final class ZoneWarsForge {
         private static double doubleValue(JsonObject root, String key, double fallback) {
             JsonElement element = root.get(key);
             return element == null || element.isJsonNull() ? fallback : element.getAsDouble();
+        }
+
+        private static int boundedInt(JsonObject root, String key, int fallback, int minimum, int maximum) {
+            try {
+                return Math.max(minimum, Math.min(maximum, intValue(root, key, fallback)));
+            } catch (RuntimeException ignored) {
+                return fallback;
+            }
+        }
+
+        private static double boundedDouble(JsonObject root, String key, double fallback, double minimum, double maximum) {
+            try {
+                double value = doubleValue(root, key, fallback);
+                if (!Double.isFinite(value)) {
+                    return fallback;
+                }
+                return Math.max(minimum, Math.min(maximum, value));
+            } catch (RuntimeException ignored) {
+                return fallback;
+            }
         }
 
         private record ClanState(Map<String, Clan> clans, Map<UUID, String> playerClans) {
