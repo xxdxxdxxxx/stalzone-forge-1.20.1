@@ -2896,7 +2896,6 @@ public final class ZoneWarsForge {
 
         private TickResult tick(Collection<ServerPlayer> players, Map<UUID, TeamColor> teams, int captureSeconds, double secondsPerTick) {
             Map<TeamColor, Integer> present = new EnumMap<>(TeamColor.class);
-            double radiusSquared = data.radius() * data.radius();
 
             for (ServerPlayer player : players) {
                 TeamColor team = teams.get(player.getUUID());
@@ -2909,10 +2908,7 @@ public final class ZoneWarsForge {
                 double dx = player.getX() - data.location().x();
                 double dy = player.getY() - data.location().y();
                 double dz = player.getZ() - data.location().z();
-                // Capture zones are vertical cylinders. A 3D sphere made valid players
-                // fall outside the zone when terrain height differed from the saved Y.
-                double verticalLimit = Math.max(6.0, data.radius());
-                if (dx * dx + dz * dz <= radiusSquared && Math.abs(dy) <= verticalLimit) {
+                if (ZoneWarsRules.insideCaptureCylinder(dx, dy, dz, data.radius())) {
                     present.merge(team, 1, Integer::sum);
                 }
             }
