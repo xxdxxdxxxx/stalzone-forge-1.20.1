@@ -1,5 +1,5 @@
 modLoader="javafml"
-loaderVersion="[47,)"
+loaderVersion="[47,48)"
 license="All Rights Reserved"
 
 [[mods]]
@@ -13,20 +13,20 @@ displayTest="MATCH_VERSION"
 [[dependencies.${mod_id}]]
 modId="forge"
 mandatory=true
-versionRange="[47,)"
+versionRange="[47,48)"
 ordering="NONE"
 side="BOTH"
 
 [[dependencies.${mod_id}]]
 modId="minecraft"
 mandatory=true
-versionRange="[1.20.1,1.21)"
+versionRange="[1.20.1]"
 ordering="NONE"
 side="BOTH"
 
 [[dependencies.${mod_id}]]
 modId="tacz"
 mandatory=true
-versionRange="[1.1.8,)"
+versionRange="[1.1.8,1.2)"
 ordering="AFTER"
 side="BOTH"

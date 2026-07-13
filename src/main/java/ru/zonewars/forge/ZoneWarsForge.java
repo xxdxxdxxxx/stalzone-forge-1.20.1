@@ -59,6 +59,8 @@ public final class ZoneWarsForge {
     private final RespawnService respawns = new RespawnService(matches, squads);
     private final ForgeClientBridge clientBridge = new ForgeClientBridge(matches, squads, stats, respawns);
     private final GuiMenus menus = new GuiMenus();
+    private final Map<UUID, Long> actionCooldowns = new HashMap<>();
+    private final Map<UUID, Long> stateRequestCooldowns = new HashMap<>();
     private int secondTicker;
     private int stateTicker;
 
@@ -68,9 +70,7 @@ public final class ZoneWarsForge {
         storage.loadArena().ifPresent(matches::loadArena);
         clans.load(storage.loadClans());
         stats.loadTotals(storage.loadPlayerStats());
-        storage.saveArena(matches.arena());
-        storage.saveClans(clans.snapshot());
-        storage.savePlayerStats(stats.totalsSnapshot());
+        // Never overwrite unreadable persistence files with defaults at startup.
         storage.ensureMatchHistory();
         ZoneWarsNetwork.register(this::handleClientAction);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
@@ -182,6 +182,8 @@ public final class ZoneWarsForge {
     private void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         MinecraftServer server = player.server;
+        actionCooldowns.remove(player.getUUID());
+        stateRequestCooldowns.remove(player.getUUID());
         matches.leave(player); respawns.removePlayer(server, player.getUUID()); squads.leave(player.getUUID()); clientBridge.removePlayer(player);
     }
     private void onRespawn(PlayerEvent.PlayerRespawnEvent event) {
@@ -202,6 +204,9 @@ public final class ZoneWarsForge {
 
     private void handleClientAction(ServerPlayer player, String rawAction) {
         String action = rawAction == null ? "" : rawAction.trim();
+        if (action.isEmpty() || action.length() > 256 || !allowClientAction(player, action)) {
+            return;
+        }
         if (action.equalsIgnoreCase("request_state")) {
             clientBridge.sendState(player);
             return;
@@ -231,6 +236,17 @@ public final class ZoneWarsForge {
         }
     }
 
+    private boolean allowClientAction(ServerPlayer player, String action) {
+        UUID id = player.getUUID();
+        long now = System.currentTimeMillis();
+        boolean stateRequest = action.equalsIgnoreCase("request_state");
+        Map<UUID, Long> limits = stateRequest ? stateRequestCooldowns : actionCooldowns;
+        long allowedAt = limits.getOrDefault(id, 0L);
+        if (now < allowedAt) return false;
+        limits.put(id, now + (stateRequest ? 2_000L : 250L));
+        return true;
+    }
+
     private boolean allowDamage(LivingEntity entity, DamageSource source, float amount) {
         if (!(entity instanceof ServerPlayer victim)) {
             return true;
@@ -250,6 +266,9 @@ public final class ZoneWarsForge {
 
     private void afterDeath(LivingEntity entity, DamageSource source) {
         if (!(entity instanceof ServerPlayer victim)) {
+            return;
+        }
+        if (!matches.isParticipant(victim.getUUID())) {
             return;
         }
         respawns.markDeath(victim.getUUID());
@@ -573,6 +592,12 @@ public final class ZoneWarsForge {
         ServerPlayer target = source.getServer().getPlayerList().getPlayerByName(targetName);
         if (target == null) {
             error(source, "Player not found.");
+            return 0;
+        }
+        Optional<TeamColor> inviterTeam = matches.teamOf(player.getUUID());
+        Optional<TeamColor> targetTeam = matches.teamOf(target.getUUID());
+        if (inviterTeam.isPresent() && (targetTeam.isEmpty() || inviterTeam.get() != targetTeam.get())) {
+            error(source, "Target must be on your team.");
             return 0;
         }
         try {
@@ -1159,6 +1184,9 @@ public final class ZoneWarsForge {
             for (ServerPlayer player : viewer.server.getPlayerList().getPlayers()) {
                 Optional<TeamColor> team = matches.teamOf(player.getUUID());
                 if (team.isEmpty()) {
+                    continue;
+                }
+                if (viewerTeam.isEmpty() || team.get() != viewerTeam.get()) {
                     continue;
                 }
                 JsonObject object = new JsonObject();
@@ -2311,8 +2339,20 @@ public final class ZoneWarsForge {
             }
             try {
                 Files.createDirectories(dir);
-                try (Writer writer = Files.newBufferedWriter(dir.resolve(name), StandardCharsets.UTF_8)) {
+                Path target = dir.resolve(name);
+                Path temporary = dir.resolve(name + ".tmp");
+                Path backup = dir.resolve(name + ".bak");
+                try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                     GSON.toJson(root, writer);
+                }
+                if (Files.isRegularFile(target)) {
+                    Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
+                }
+                try {
+                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException ignored) {
+                    Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
                 }
             } catch (IOException exception) {
                 System.err.println(PREFIX + "Could not write " + name + ": " + exception.getMessage());
@@ -2508,20 +2548,23 @@ public final class ZoneWarsForge {
             return selected.getOrDefault(playerId, RespawnKind.BASE);
         }
 
-        private void respawn(ServerPlayer player) {
-            awaitingRespawn.remove(player.getUUID());
+        private boolean respawn(ServerPlayer player) {
+            if (!matches.isParticipant(player.getUUID()) || !awaitingRespawn.remove(player.getUUID())) {
+                return false;
+            }
             RespawnPoint point = resolve(player).orElse(null);
             if (point == null) {
                 matches.teleportToBase(player);
-                return;
+                return true;
             }
             long now = System.currentTimeMillis();
             if (point.availableAt() > now) {
                 matches.teleportToBase(player);
-                return;
+                return true;
             }
             matches.teleport(player, point.location());
             cooldownUntil.put(player.getUUID(), now + (point.kind() == RespawnKind.TENT ? 10_000L : 50_000L));
+            return true;
         }
 
         private boolean isAvailable(ServerPlayer player, RespawnKind kind) {
