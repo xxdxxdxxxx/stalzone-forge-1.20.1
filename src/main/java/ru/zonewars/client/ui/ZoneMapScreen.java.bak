@@ -36,7 +36,6 @@ public final class ZoneMapScreen extends Screen {
     private ButtonTarget respawnButton;
     private String localSelectedRespawn;
     private long selectionPulseStarted;
-    private final long openedAtMillis = System.currentTimeMillis();
 
     public ZoneMapScreen() {
         this(false);
@@ -72,7 +71,6 @@ public final class ZoneMapScreen extends Screen {
         if (respawnMode) {
             drawRespawnControls(graphics, snapshot, mouseX, mouseY);
         }
-        drawPdaOverlay(graphics);
     }
 
     @Override
@@ -581,65 +579,6 @@ public final class ZoneMapScreen extends Screen {
     private record ButtonTarget(int x, int y, int width, int height) {
         boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
-        }
-    }
-
-    private void drawPdaOverlay(GuiGraphics graphics) {
-        int w = this.width;
-        int h = this.height;
-        long now = System.currentTimeMillis();
-        long age = now - openedAtMillis;
-
-        // CRT scanlines.
-        for (int y = 0; y < h; y += 3) {
-            graphics.fill(0, y, w, y + 1, 0x0810130E);
-        }
-        // Phosphor-green vignette.
-        graphics.fill(0, 0, w, 14, 0x3306140B);
-        graphics.fill(0, h - 14, w, h, 0x3306140B);
-        graphics.fill(0, 0, 14, h, 0x3306140B);
-        graphics.fill(w - 14, 0, w, h, 0x3306140B);
-
-        // Rugged device frame.
-        int frame = 6;
-        int frameColor = 0xFF3A4433;
-        int frameLight = 0xFF57644B;
-        int frameDark = 0xFF242B1F;
-        graphics.fill(0, 0, w, frame, frameColor);
-        graphics.fill(0, h - frame, w, h, frameColor);
-        graphics.fill(0, 0, frame, h, frameColor);
-        graphics.fill(w - frame, 0, w, h, frameColor);
-        graphics.fill(0, frame, w, frame + 1, frameLight);
-        graphics.fill(0, h - frame - 1, w, h - frame, frameDark);
-
-        // Corner plates with screws.
-        int plate = 18;
-        int[][] corners = { { 0, 0 }, { w - plate, 0 }, { 0, h - plate }, { w - plate, h - plate } };
-        for (int[] corner : corners) {
-            graphics.fill(corner[0], corner[1], corner[0] + plate, corner[1] + plate, frameColor);
-            graphics.renderOutline(corner[0], corner[1], plate, plate, frameDark);
-            graphics.fill(corner[0] + 7, corner[1] + 7, corner[0] + 11, corner[1] + 11, frameDark);
-            graphics.fill(corner[0] + 8, corner[1] + 8, corner[0] + 10, corner[1] + 10, 0xFF6E7C5D);
-        }
-
-        // Status line, bottom-right.
-        String status = respawnMode ? "PDA // DEPLOYMENT UPLINK" : "PDA // TACTICAL MAP";
-        int statusWidth = this.font.width(status);
-        graphics.drawString(this.font, status, w - statusWidth - 26, h - 17, 0xFF87A06B, false);
-        if ((now / 500) % 2 == 0) {
-            graphics.fill(w - 22, h - 16, w - 16, h - 10, 0xFF59D979);
-        }
-
-        // Boot animation: flicker, fade from black, sweep line.
-        if (age < 420) {
-            float t = age / 420.0f;
-            int alpha = (int) ((1.0f - t) * 235.0f);
-            if (age < 160 && (age / 40) % 2 == 0) {
-                alpha = Math.min(255, alpha + 40);
-            }
-            graphics.fill(0, 0, w, h, (alpha << 24) | 0x000A0E08);
-            int sweepY = (int) (t * h);
-            graphics.fill(0, Math.max(0, sweepY - 2), w, Math.min(h, sweepY + 2), 0x5578A05C);
         }
     }
 }

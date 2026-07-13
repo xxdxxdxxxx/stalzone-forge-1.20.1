@@ -1,3 +1,47 @@
+# apply-zonewars-map-polish.ps1
+# 1) Replaces the built-in square MINIMAP panel with a custom round radar (top-right).
+# 2) Rewrites XaeroWaypointBridge: clean waypoint names (no "[ZW]" clutter), identity-tracked cleanup,
+#    and auto-opens the PDA-style deployment map when a respawn choice is pending.
+# 3) Restyles ZoneMapScreen as a PDA device: frame, scanlines, boot animation.
+#
+# Usage (from C:\stalzone-forge):
+#   powershell -ExecutionPolicy Bypass -File .\apply-zonewars-map-polish.ps1 -Build -Push
+
+param(
+    [string]$RepoPath = "C:\stalzone-forge",
+    [switch]$Build,
+    [switch]$Push,
+    [string]$Remote = "origin",
+    [string]$CommitMessage = "Round HUD radar, cleaner Xaero waypoints, PDA-style respawn map with boot animation"
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Invoke-Native {
+    param([string]$Command)
+    $output = & cmd /c "$Command 2>&1"
+    $code = $LASTEXITCODE
+    if ($output) { $output | ForEach-Object { Write-Host $_ } }
+    if ($code -ne 0) { throw "Command failed ($code): $Command" }
+}
+
+function Get-Text([string]$Path) {
+    if (-not (Test-Path $Path)) { throw "File not found: $Path" }
+    return [System.IO.File]::ReadAllText($Path)
+}
+
+function Set-Text([string]$Path, [string]$Content) {
+    if (Test-Path $Path) { Copy-Item $Path "$Path.bak" -Force }
+    [System.IO.File]::WriteAllText($Path, $Content)
+}
+
+Set-Location $RepoPath
+
+# ============================================================================
+# [1/4] XaeroWaypointBridge v2 (full rewrite)
+# ============================================================================
+$bridgePath = "src\main\java\ru\zonewars\client\map\XaeroWaypointBridge.java"
+$bridgeJava = @'
 package ru.zonewars.client.map;
 
 import net.minecraft.client.Minecraft;
@@ -344,3 +388,253 @@ public final class XaeroWaypointBridge {
         return waypoint;
     }
 }
+'@
+Set-Text $bridgePath $bridgeJava
+Write-Host "[1/4] XaeroWaypointBridge rewritten (clean names, respawn auto-open)"
+
+# ============================================================================
+# [2/4] ZoneWarsHud: round radar instead of the square MINIMAP panel
+# ============================================================================
+$hudPath = "src\main\java\ru\zonewars\client\ui\ZoneWarsHud.java"
+$hud = Get-Text $hudPath
+if ($hud.Contains("drawRoundMiniMap")) {
+    Write-Host "[2/4] ZoneWarsHud already patched - skipping"
+} else {
+    $callPattern = '(?:if \(!ru\.zonewars\.client\.map\.XaeroWaypointBridge\.active\(\)\)\s*)?drawMiniMap\(graphics, client, snapshot\);'
+    $callRegex = [regex]$callPattern
+    if (-not $callRegex.IsMatch($hud)) { throw "ZoneWarsHud: minimap call site not found" }
+    $hud = $callRegex.Replace($hud, 'drawRoundMiniMap(graphics, client, snapshot);', 1)
+
+    $hudMethods = @'
+
+    // ------------------------------------------------------------ round radar
+
+    private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+        int radius = 56;
+        int cx = graphics.guiWidth() - radius - 16;
+        int cy = radius + 40;
+        double px = client.player.getX();
+        double pz = client.player.getZ();
+        double range = 110.0;
+
+        // Circular backdrop drawn as horizontal strips.
+        for (int dy = -radius; dy <= radius; dy++) {
+            int half = (int) Math.floor(Math.sqrt((double) radius * radius - (double) dy * dy));
+            graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0xD20D1410);
+        }
+        // Inner range ring + crosshair.
+        drawRing(graphics, cx, cy, radius - 21, 0x2ECAD7C2);
+        graphics.fill(cx - radius + 6, cy, cx + radius - 6, cy + 1, 0x1CCAD7C2);
+        graphics.fill(cx, cy - radius + 6, cx + 1, cy + radius - 6, 0x1CCAD7C2);
+        // Rim.
+        drawRing(graphics, cx, cy, radius, 0xFF222B21);
+        drawRing(graphics, cx, cy, radius - 1, 0xFF71835C);
+        graphics.drawCenteredString(client.font, "N", cx, cy - radius + 5, TEXT);
+
+        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
+            if (!snapshot.team().equals(respawn.team())) {
+                continue;
+            }
+            int[] pos = radarPos(cx, cy, radius, range, px, pz, respawn.x(), respawn.z());
+            int color = respawn.available() ? spawnColor(respawn.kind(), respawn.team()) : 0xFF606B73;
+            graphics.fill(pos[0] - 2, pos[1] - 2, pos[0] + 3, pos[1] + 3, 0xFF0B1117);
+            graphics.renderOutline(pos[0] - 2, pos[1] - 2, 5, 5, color);
+        }
+        for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
+            int[] pos = radarPos(cx, cy, radius, range, px, pz, marker.x(), marker.z());
+            graphics.drawCenteredString(client.font, markerLabel(marker.type()), pos[0], pos[1] - 4, markerColor(marker.type()));
+        }
+        for (ZoneWarsState.PlayerState player : snapshot.players()) {
+            if (player.self() || !player.squad()) {
+                continue;
+            }
+            int[] pos = radarPos(cx, cy, radius, range, px, pz, player.x(), player.z());
+            graphics.fill(pos[0] - 1, pos[1] - 1, pos[0] + 2, pos[1] + 2, GREEN);
+        }
+        for (ZoneWarsState.PointState point : snapshot.points()) {
+            int[] pos = radarPos(cx, cy, radius, range, px, pz, point.x(), point.z());
+            int color = pointColor(point);
+            if (pos[2] == 1) {
+                // Out of range: small chevron pinned to the rim.
+                graphics.fill(pos[0] - 2, pos[1] - 2, pos[0] + 3, pos[1] + 3, color);
+            } else {
+                graphics.fill(pos[0] - 5, pos[1] - 5, pos[0] + 5, pos[1] + 5, 0xD90B1117);
+                graphics.renderOutline(pos[0] - 5, pos[1] - 5, 10, 10, color);
+                graphics.drawCenteredString(client.font, pointLabel(point), pos[0], pos[1] - 4, TEXT);
+            }
+        }
+
+        graphics.drawCenteredString(client.font, radarArrow(snapshot.selfYaw()), cx, cy - 4, TEXT);
+        graphics.drawCenteredString(client.font, (int) px + " " + (int) pz, cx, cy + radius + 5, MUTED);
+    }
+
+    private static int[] radarPos(int cx, int cy, int radius, double range, double px, double pz, int x, int z) {
+        double dx = x - px;
+        double dz = z - pz;
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        int clamped = 0;
+        if (dist > range) {
+            dx = dx / dist * range;
+            dz = dz / dist * range;
+            clamped = 1;
+        }
+        double scale = (radius - 7) / range;
+        return new int[] { cx + (int) Math.round(dx * scale), cy + (int) Math.round(dz * scale), clamped };
+    }
+
+    private static void drawRing(GuiGraphics graphics, int cx, int cy, int r, int color) {
+        int steps = Math.max(60, r * 7);
+        for (int i = 0; i < steps; i++) {
+            double angle = Math.PI * 2.0 * i / steps;
+            int x = cx + (int) Math.round(Math.cos(angle) * r);
+            int y = cy + (int) Math.round(Math.sin(angle) * r);
+            graphics.fill(x, y, x + 1, y + 1, color);
+        }
+    }
+
+    private static String radarArrow(int yaw) {
+        int normalized = ((yaw % 360) + 360) % 360;
+        if (normalized >= 45 && normalized < 135) {
+            return "<";
+        }
+        if (normalized >= 135 && normalized < 225) {
+            return "^";
+        }
+        if (normalized >= 225 && normalized < 315) {
+            return ">";
+        }
+        return "v";
+    }
+'@
+
+    $braceIndex = $hud.LastIndexOf('}')
+    if ($braceIndex -lt 0) { throw "ZoneWarsHud: closing brace not found" }
+    $hud = $hud.Substring(0, $braceIndex) + $hudMethods + "`n}`n"
+    Set-Text $hudPath $hud
+    Write-Host "[2/4] ZoneWarsHud: round radar installed (top-right)"
+}
+
+# ============================================================================
+# [3/4] ZoneMapScreen: PDA frame, scanlines, boot animation
+# ============================================================================
+$screenPath = "src\main\java\ru\zonewars\client\ui\ZoneMapScreen.java"
+$screen = Get-Text $screenPath
+if ($screen.Contains("drawPdaOverlay")) {
+    Write-Host "[3/4] ZoneMapScreen already patched - skipping"
+} else {
+    if (-not $screen.Contains("private long selectionPulseStarted;")) { throw "ZoneMapScreen: field anchor not found" }
+    $screen = $screen.Replace(
+        "private long selectionPulseStarted;",
+        "private long selectionPulseStarted;`n    private final long openedAtMillis = System.currentTimeMillis();")
+
+    $overlayCallRegex = [regex]'(if \(respawnMode\) \{\s*drawRespawnControls\(graphics, snapshot, mouseX, mouseY\);\s*\})'
+    if (-not $overlayCallRegex.IsMatch($screen)) { throw "ZoneMapScreen: render() anchor not found" }
+    $overlayReplacement = '$1' + "`n        drawPdaOverlay(graphics);"
+    $screen = $overlayCallRegex.Replace($screen, $overlayReplacement, 1)
+
+    $screenMethods = @'
+
+    private void drawPdaOverlay(GuiGraphics graphics) {
+        int w = this.width;
+        int h = this.height;
+        long now = System.currentTimeMillis();
+        long age = now - openedAtMillis;
+
+        // CRT scanlines.
+        for (int y = 0; y < h; y += 3) {
+            graphics.fill(0, y, w, y + 1, 0x0810130E);
+        }
+        // Phosphor-green vignette.
+        graphics.fill(0, 0, w, 14, 0x3306140B);
+        graphics.fill(0, h - 14, w, h, 0x3306140B);
+        graphics.fill(0, 0, 14, h, 0x3306140B);
+        graphics.fill(w - 14, 0, w, h, 0x3306140B);
+
+        // Rugged device frame.
+        int frame = 6;
+        int frameColor = 0xFF3A4433;
+        int frameLight = 0xFF57644B;
+        int frameDark = 0xFF242B1F;
+        graphics.fill(0, 0, w, frame, frameColor);
+        graphics.fill(0, h - frame, w, h, frameColor);
+        graphics.fill(0, 0, frame, h, frameColor);
+        graphics.fill(w - frame, 0, w, h, frameColor);
+        graphics.fill(0, frame, w, frame + 1, frameLight);
+        graphics.fill(0, h - frame - 1, w, h - frame, frameDark);
+
+        // Corner plates with screws.
+        int plate = 18;
+        int[][] corners = { { 0, 0 }, { w - plate, 0 }, { 0, h - plate }, { w - plate, h - plate } };
+        for (int[] corner : corners) {
+            graphics.fill(corner[0], corner[1], corner[0] + plate, corner[1] + plate, frameColor);
+            graphics.renderOutline(corner[0], corner[1], plate, plate, frameDark);
+            graphics.fill(corner[0] + 7, corner[1] + 7, corner[0] + 11, corner[1] + 11, frameDark);
+            graphics.fill(corner[0] + 8, corner[1] + 8, corner[0] + 10, corner[1] + 10, 0xFF6E7C5D);
+        }
+
+        // Status line, bottom-right.
+        String status = respawnMode ? "PDA // DEPLOYMENT UPLINK" : "PDA // TACTICAL MAP";
+        int statusWidth = this.font.width(status);
+        graphics.drawString(this.font, status, w - statusWidth - 26, h - 17, 0xFF87A06B, false);
+        if ((now / 500) % 2 == 0) {
+            graphics.fill(w - 22, h - 16, w - 16, h - 10, 0xFF59D979);
+        }
+
+        // Boot animation: flicker, fade from black, sweep line.
+        if (age < 420) {
+            float t = age / 420.0f;
+            int alpha = (int) ((1.0f - t) * 235.0f);
+            if (age < 160 && (age / 40) % 2 == 0) {
+                alpha = Math.min(255, alpha + 40);
+            }
+            graphics.fill(0, 0, w, h, (alpha << 24) | 0x000A0E08);
+            int sweepY = (int) (t * h);
+            graphics.fill(0, Math.max(0, sweepY - 2), w, Math.min(h, sweepY + 2), 0x5578A05C);
+        }
+    }
+'@
+
+    $braceIndex = $screen.LastIndexOf('}')
+    if ($braceIndex -lt 0) { throw "ZoneMapScreen: closing brace not found" }
+    $screen = $screen.Substring(0, $braceIndex) + $screenMethods + "`n}`n"
+    Set-Text $screenPath $screen
+    Write-Host "[3/4] ZoneMapScreen: PDA frame + boot animation installed"
+}
+
+# ============================================================================
+# [4/4] Build, commit, push
+# ============================================================================
+if ($Build) {
+    Write-Host "[4/4] Building..."
+    try {
+        Invoke-Native ".\gradlew.bat --no-daemon clean build"
+        Write-Host "Build OK"
+    } catch {
+        throw "Build FAILED - nothing was committed. Backups: *.bak next to each patched file."
+    }
+} else {
+    Write-Host "[4/4] Skipping build (no -Build flag)"
+}
+
+Invoke-Native "git add -A"
+$pending = & cmd /c "git status --porcelain 2>&1"
+if ($pending) {
+    Invoke-Native "git commit -m `"$CommitMessage`""
+    Write-Host "Committed: $CommitMessage"
+} else {
+    Write-Host "Nothing to commit"
+}
+
+if ($Push) {
+    Invoke-Native "git push $Remote HEAD"
+    Write-Host "Pushed to $Remote"
+} else {
+    Write-Host "Skipping push (no -Push flag)"
+}
+
+Write-Host ""
+Write-Host "Done. What changed:"
+Write-Host " - Round radar (top-right): points A/B/C, own tent/rally, squad mates, pings; coords under it"
+Write-Host " - Xaero waypoints now have clean names (A/B/C, Tent, Rally, Ping)"
+Write-Host " - On death the PDA-style deployment map opens automatically (frame, scanlines, boot animation)"
+Write-Host " - Tip: disable Xaero's own minimap in its settings so only the round radar is shown"
