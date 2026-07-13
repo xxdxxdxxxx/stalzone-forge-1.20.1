@@ -6,22 +6,29 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
+import ru.zonewars.client.net.ZoneWarsNetworking;
 import ru.zonewars.client.state.ZoneWarsState;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
- * Draws ZoneWars tactical markers on top of the campchat PDA "Map" tab.
+ * ZoneWars integration with the campchat P
+DA (ZCraft STALKER PDA) "Map" tab.
  *
- * campchat (ZCraft STALKER PDA) by kltyton - used with the author's permission,
- * non-commercial. Pure reflection: no compile-time dependency on campchat or
- * Xaero's World Map, and nothing inside the campchat jar is modified.
+ * campchat by kltyton - used with the author's permission, non-commercial.
+ * Pure reflection: no compile-time dependency on campchat or Xaero's World
+ * Map, and nothing inside the campchat jar is modified.
  *
- * If the embedded Xaero map is present, markers are anchored to its camera
- * (cameraX / cameraZ / scale). Otherwise a self-contained tactical grid is
- * rendered inside the map panel so the PDA map tab is never empty.
+ * v2: besides drawing markers, this class hosts the full deployment
+ * (respawn) flow inside the PDA: spawn cards, DEPLOY button, hotkeys 1-3
+ * and ENTER, plus tactical pings (Shift+LMB waypoint, Ctrl+LMB attack,
+ * Ctrl+RMB danger). It can also open the PDA programmatically (M key and
+ * on death), falling back to the legacy ZoneMapScreen when campchat is
+ * missing.
  */
 public final class CampChatMapOverlay {
     private static final String SCREEN_CLASS = "com.kltyton.campchat.client.gui.CampChatScreen";
@@ -48,12 +55,71 @@ public final class CampChatMapOverlay {
     private static Field cameraZField;
     private static Field scaleField;
 
+    private static long lastDeployAt;
+    private static boolean respawnUiActive;
+    private static final List<int[]> cardRects = new ArrayList<>();
+    private static final List<String> cardKinds = new ArrayList<>();
+    private static int[] deployRect;
+    private static boolean transformValid;
+    private static double lastCenterX;
+    private static double lastCenterY;
+    private static double lastCameraX;
+    private static double lastCameraZ;
+    private static double lastScale;
+    private static int lastPanelX;
+    private static int lastPanelY;
+    private static int lastPanelW;
+    private static int lastPanelH;
+
     private CampChatMapOverlay() {
     }
 
     public static void register() {
         MinecraftForge.EVENT_BUS.addListener(CampChatMapOverlay::onScreenRender);
+        MinecraftForge.EVENT_BUS.addListener(CampChatMapOverlay::onMousePressed);
+        MinecraftForge.EVENT_BUS.addListener(CampChatMapOverlay::onKeyPressed);
     }
+
+    // ------------------------------------------------------------ open PDA
+
+    /** Opens the campchat PDA on the Map tab. Returns false if campchat is unavailable. */
+    public static boolean openPda(Minecraft minecraft) {
+        try {
+            Class screenClass = Class.forName(SCREEN_CLASS);
+            Screen screen = (Screen) screenClass.getDeclaredConstructor().newInstance();
+            minecraft.setScreen(screen);
+            try {
+                ensureScreenReflection(screenClass);
+                Class tabClass = Class.forName(SCREEN_CLASS + "$MainTab");
+                Object mapTab = null;
+                for (Object constant : tabClass.getEnumConstants()) {
+                    if (constant instanceof Enum tabEnum && "MAP".equals(tabEnum.name())) {
+                        mapTab = constant;
+                    }
+                }
+                if (mapTab != null) {
+                    activeTabField.set(screen, mapTab);
+                }
+            } catch (Throwable ignored) {
+                // PDA still opens, just not forced onto the Map tab.
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Death flow: open the PDA deployment view (fallback: legacy ZoneMapScreen). */
+    public static void openDeployment(Minecraft minecraft) {
+        if (System.currentTimeMillis() - lastDeployAt < 2500L) {
+            return;
+        }
+        if (!openPda(minecraft)) {
+            minecraft.setScreen(new ru.zonewars.client.ui.ZoneMapScreen(true));
+        }
+    }
+
+    // ------------------------------------------------------------- render
 
     private static void onScreenRender(ScreenEvent.Render.Post event) {
         if (broken) {
@@ -63,6 +129,11 @@ public final class CampChatMapOverlay {
         if (screen == null || !SCREEN_CLASS.equals(screen.getClass().getName())) {
             return;
         }
+        respawnUiActive = false;
+        deployRect = null;
+        cardRects.clear();
+        cardKinds.clear();
+        transformValid = false;
         try {
             render(event.getGuiGraphics(), screen);
         } catch (Throwable t) {
@@ -73,7 +144,7 @@ public final class CampChatMapOverlay {
     private static void render(GuiGraphics graphics, Screen screen) throws Exception {
         ensureScreenReflection(screen.getClass());
         Object tab = activeTabField.get(screen);
-        if (!(tab instanceof Enum<?> tabEnum) || !"MAP".equals(tabEnum.name())) {
+        if (!(tab instanceof Enum tabEnum) || !"MAP".equals(tabEnum.name())) {
             return;
         }
         Object panel = mapPanelField.get(screen);
@@ -97,6 +168,11 @@ public final class CampChatMapOverlay {
         Minecraft minecraft = Minecraft.getInstance();
         Object guiMap = embeddedMapField.get(screen);
 
+        lastPanelX = px;
+        lastPanelY = py;
+        lastPanelW = pw;
+        lastPanelH = ph;
+
         boolean anchored = false;
         graphics.enableScissor(px, py, px + pw, py + ph);
         try {
@@ -107,7 +183,7 @@ public final class CampChatMapOverlay {
                 // Xaero's GuiMap scale is expressed in raw framebuffer pixels per
                 // block, while GuiGraphics works in gui-scaled pixels. Without this
                 // correction markers drift away from their true positions.
-                double uiScale = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScale();
+                double uiScale = minecraft.getWindow().getGuiScale();
                 if (uiScale > 0.0001) {
                     scale /= uiScale;
                 }
@@ -115,6 +191,12 @@ public final class CampChatMapOverlay {
                     drawMarkers(graphics, minecraft, snapshot,
                             new WorldTransform(px + pw / 2.0, py + ph / 2.0, cameraX, cameraZ, scale));
                     anchored = true;
+                    lastCenterX = px + pw / 2.0;
+                    lastCenterY = py + ph / 2.0;
+                    lastCameraX = cameraX;
+                    lastCameraZ = cameraZ;
+                    lastScale = scale;
+                    transformValid = true;
                 }
             }
             if (!anchored) {
@@ -124,10 +206,14 @@ public final class CampChatMapOverlay {
             graphics.disableScissor();
         }
         drawHeader(graphics, minecraft, snapshot, px, py, anchored);
+        if (snapshot.respawnPrompt()) {
+            drawDeploymentPanel(graphics, minecraft, snapshot, px, py, pw, ph);
+            respawnUiActive = true;
+        }
     }
 
     private static void drawMarkers(GuiGraphics graphics, Minecraft minecraft,
-                                    ZoneWarsState.Snapshot snapshot, WorldTransform transform) {
+            ZoneWarsState.Snapshot snapshot, WorldTransform transform) {
         Font font = minecraft.font;
         for (ZoneWarsState.PointState point : snapshot.points()) {
             drawChip(graphics, font, transform.x(point.x()), transform.y(point.z()),
@@ -157,14 +243,164 @@ public final class CampChatMapOverlay {
         if (minecraft.player != null) {
             int x = transform.x(minecraft.player.getX());
             int y = transform.y(minecraft.player.getZ());
-            graphics.fill(x - 3, y - 3, x + 3, y + 3, 0xFF101614);
-            graphics.fill(x - 2, y - 2, x + 2, y + 2, 0xFFFFFFFF);
-            graphics.drawCenteredString(font, arrow(snapshot.selfYaw()), x, y - 12, TEXT);
+            graphics.pose().pushPose();
+            graphics.pose().translate((float) x, (float) y, 0.0f);
+            graphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(minecraft.player.getYRot() + 180.0f));
+            graphics.fill(-2, -6, 2, -2, 0xF0101614);
+            graphics.fill(-3, -3, 3, 1, 0xF0101614);
+            graphics.fill(-4, 1, 4, 3, 0xF0101614);
+            graphics.fill(-1, -5, 1, -2, 0xFFFFFFFF);
+            graphics.fill(-2, -2, 2, 1, 0xFFFFFFFF);
+            graphics.fill(-3, 1, 3, 2, 0xFFFFFFFF);
+            graphics.pose().popPose();
         }
     }
 
+    // ------------------------------------------------- deployment (respawn)
+
+    private static void drawDeploymentPanel(GuiGraphics graphics, Minecraft minecraft,
+            ZoneWarsState.Snapshot snapshot, int px, int py, int pw, int ph) {
+        Font font = minecraft.font;
+        int width = Math.max(120, Math.min(156, pw / 3));
+        int x2 = px + pw - 8;
+        int x1 = x2 - width;
+        int y = py + 20;
+
+        graphics.fill(x1, y, x2, y + 14, 0xE0101613);
+        graphics.drawString(font, "DEPLOYMENT // SELECT", x1 + 5, y + 3, ACCENT, false);
+        y += 18;
+
+        int index = 0;
+        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
+            if (!snapshot.team().equals(respawn.team())) {
+                continue;
+            }
+            if (index >= 5) {
+                break;
+            }
+            int bottom = y + 30;
+            boolean selected = respawn.kind() != null && respawn.kind().equals(snapshot.selectedRespawn());
+            int frame = !respawn.available() ? 0xFF39424B : (selected ? ACCENT : 0xFF44544A);
+            graphics.fill(x1, y, x2, bottom, selected ? 0xF013221A : 0xE0101613);
+            graphics.renderOutline(x1, y, width, 30, frame);
+            graphics.drawString(font, (index + 1) + " " + kindTitle(respawn.kind()), x1 + 6, y + 5,
+                    respawn.available() ? (selected ? ACCENT : TEXT) : DISABLED, false);
+            String status;
+            if (!respawn.available()) {
+                status = "NOT DEPLOYED";
+            } else if (respawn.seconds() > 0) {
+                status = "READY IN " + respawn.seconds() + "s";
+            } else {
+                status = selected ? "SELECTED" : "READY";
+            }
+            graphics.drawString(font, status, x1 + 6, y + 17,
+                    respawn.available() ? (selected ? ACCENT : 0xFFADBBB1) : DISABLED, false);
+            cardRects.add(new int[] { x1, y, x2, bottom });
+            cardKinds.add(respawn.kind());
+            y = bottom + 5;
+            index++;
+        }
+
+        int bottom = y + 20;
+        graphics.fill(x1, y, x2, bottom, 0xF0173A26);
+        graphics.renderOutline(x1, y, width, 20, ACCENT);
+        graphics.drawCenteredString(font, "DEPLOY [ENTER]", (x1 + x2) / 2, y + 6, ACCENT);
+        deployRect = new int[] { x1, y, x2, bottom };
+        graphics.drawString(font, "1-3 SELECT / CLICK", x1 + 2, bottom + 4, 0xFF7E8B82, false);
+    }
+
+    private static void deployNow(Minecraft minecraft) {
+        ZoneWarsNetworking.confirmRespawn();
+        if (minecraft.player != null && minecraft.player.isDeadOrDying()) {
+            // The real respawn: vanilla packet -> server PlayerRespawnEvent ->
+            // teleport to the selected deployment point.
+            minecraft.player.respawn();
+        }
+        lastDeployAt = System.currentTimeMillis();
+        minecraft.setScreen(null);
+    }
+
+    // -------------------------------------------------------------- input
+
+    private static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
+        if (broken) {
+            return;
+        }
+        Screen screen = event.getScreen();
+        if (screen == null || !SCREEN_CLASS.equals(screen.getClass().getName())) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        double mx = event.getMouseX();
+        double my = event.getMouseY();
+        int button = event.getButton();
+        try {
+            if (respawnUiActive && button == 0) {
+                for (int i = 0; i < cardRects.size(); i++) {
+                    if (within(cardRects.get(i), mx, my)) {
+                        ZoneWarsNetworking.chooseRespawn(cardKinds.get(i));
+                        event.setCanceled(true);
+                        return;
+                    }
+                }
+                if (within(deployRect, mx, my)) {
+                    deployNow(minecraft);
+                    event.setCanceled(true);
+                    return;
+                }
+            }
+            if (transformValid && lastScale > 0.0001
+                    && mx >= lastPanelX && mx < lastPanelX + lastPanelW
+                    && my >= lastPanelY && my < lastPanelY + lastPanelH) {
+                int worldX = (int) Math.round(lastCameraX + (mx - lastCenterX) / lastScale);
+                int worldZ = (int) Math.round(lastCameraZ + (my - lastCenterY) / lastScale);
+                if (button == 0 && Screen.hasShiftDown()) {
+                    ZoneWarsNetworking.setWaypoint(worldX, worldZ);
+                    event.setCanceled(true);
+                } else if (button == 0 && Screen.hasControlDown()) {
+                    ZoneWarsNetworking.sendPing("ATTACK", worldX, worldZ);
+                    event.setCanceled(true);
+                } else if (button == 1 && Screen.hasControlDown()) {
+                    ZoneWarsNetworking.sendPing("DANGER", worldX, worldZ);
+                    event.setCanceled(true);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Never break the PDA because of overlay input handling.
+        }
+    }
+
+    private static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (broken || !respawnUiActive) {
+            return;
+        }
+        Screen screen = event.getScreen();
+        if (screen == null || !SCREEN_CLASS.equals(screen.getClass().getName())) {
+            return;
+        }
+        int key = event.getKeyCode();
+        if (key == 257 || key == 335) { // ENTER / KP_ENTER
+            deployNow(Minecraft.getInstance());
+            event.setCanceled(true);
+            return;
+        }
+        if (key >= 49 && key <= 51) { // 1..3
+            int index = key - 49;
+            if (index < cardKinds.size()) {
+                ZoneWarsNetworking.chooseRespawn(cardKinds.get(index));
+                event.setCanceled(true);
+            }
+        }
+    }
+
+    private static boolean within(int[] rect, double mx, double my) {
+        return rect != null && mx >= rect[0] && mx < rect[2] && my >= rect[1] && my < rect[3];
+    }
+
+    // ----------------------------------------------------------- fallback
+
     private static void drawFallback(GuiGraphics graphics, Minecraft minecraft,
-                                     ZoneWarsState.Snapshot snapshot, int px, int py, int pw, int ph) {
+            ZoneWarsState.Snapshot snapshot, int px, int py, int pw, int ph) {
         graphics.fill(px, py, px + pw, py + ph, 0xE60D1210);
         for (int gx = px; gx <= px + pw; gx += 48) {
             graphics.fill(gx, py, gx + 1, py + ph, 0x2259D979);
@@ -187,8 +423,9 @@ public final class CampChatMapOverlay {
     }
 
     private static void drawHeader(GuiGraphics graphics, Minecraft minecraft,
-                                   ZoneWarsState.Snapshot snapshot, int px, int py, boolean anchored) {
-        String text = "ZW UPLINK // " + snapshot.phase() + (anchored ? "" : " // TACTICAL GRID");
+            ZoneWarsState.Snapshot snapshot, int px, int py, boolean anchored) {
+        String mode = snapshot.respawnPrompt() ? "DEPLOYMENT" : snapshot.phase();
+        String text = "ZW UPLINK // " + mode + (anchored ? "" : " // TACTICAL GRID");
         int width = minecraft.font.width(text);
         graphics.fill(px + 4, py + 4, px + 10 + width, py + 16, 0xB00D1210);
         graphics.drawString(minecraft.font, text, px + 7, py + 6, ACCENT);
@@ -199,16 +436,6 @@ public final class CampChatMapOverlay {
         graphics.fill(x - 5, y - 5, x + 5, y + 5, color);
         graphics.fill(x - 4, y - 4, x + 4, y + 4, 0xE0141A17);
         graphics.drawCenteredString(font, label, x, y - 4, color);
-    }
-
-    private static String arrow(int yaw) {
-        int dir = Math.floorMod(Math.round((yaw + 45) / 90.0f), 4);
-        return switch (dir) {
-            case 0 -> "v";
-            case 1 -> "<";
-            case 2 -> "^";
-            default -> ">";
-        };
     }
 
     private static String displayName(ZoneWarsState.PointState point) {
@@ -228,6 +455,17 @@ public final class CampChatMapOverlay {
             return "Rally";
         }
         return "Base";
+    }
+
+    private static String kindTitle(String kind) {
+        String normalized = kind == null ? "" : kind.toUpperCase(Locale.ROOT);
+        if ("TENT".equals(normalized)) {
+            return "FIELD TENT";
+        }
+        if ("OUTPOST".equals(normalized)) {
+            return "SQUAD OUTPOST";
+        }
+        return "BASE";
     }
 
     private static int respawnColor(String kind, String team) {
@@ -290,7 +528,7 @@ public final class CampChatMapOverlay {
         return NEUTRAL;
     }
 
-    private static void ensureScreenReflection(Class<?> screenClass) throws Exception {
+    private static void ensureScreenReflection(Class screenClass) throws Exception {
         if (activeTabField != null) {
             return;
         }
@@ -302,7 +540,7 @@ public final class CampChatMapOverlay {
         embeddedMapField.setAccessible(true);
     }
 
-    private static void ensureRectReflection(Class<?> rectClass) throws Exception {
+    private static void ensureRectReflection(Class rectClass) throws Exception {
         if (rectX != null) {
             return;
         }
@@ -316,7 +554,7 @@ public final class CampChatMapOverlay {
         rectH.setAccessible(true);
     }
 
-    private static boolean ensureCameraReflection(Class<?> mapClass) {
+    private static boolean ensureCameraReflection(Class mapClass) {
         if (cameraXField != null && cameraZField != null && scaleField != null) {
             return true;
         }
@@ -333,8 +571,8 @@ public final class CampChatMapOverlay {
         return true;
     }
 
-    private static Field findField(Class<?> type, String name) {
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+    private static Field findField(Class type, String name) {
+        for (Class current = type; current != null; current = current.getSuperclass()) {
             try {
                 Field field = current.getDeclaredField(name);
                 field.setAccessible(true);

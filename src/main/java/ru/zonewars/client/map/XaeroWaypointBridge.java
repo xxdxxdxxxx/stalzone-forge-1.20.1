@@ -80,7 +80,7 @@ public final class XaeroWaypointBridge {
         if (!snapshot.respawnPrompt()) {
             promptHandled = false;
         } else if (!promptHandled && System.currentTimeMillis() >= deployHoldUntil && minecraft.screen == null && !"NONE".equals(snapshot.team())) {
-            minecraft.setScreen(new ZoneMapScreen(true));
+            ru.zonewars.client.map.CampChatMapOverlay.openDeployment(minecraft);
             promptHandled = true;
         }
 

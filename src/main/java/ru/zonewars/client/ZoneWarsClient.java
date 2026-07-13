@@ -12,6 +12,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.lwjgl.glfw.GLFW;
+import ru.zonewars.client.map.CampChatMapOverlay;
 import ru.zonewars.client.net.ZoneWarsNetworking;
 import ru.zonewars.client.ui.ZoneMapScreen;
 import ru.zonewars.client.ui.ZoneWarsHud;
@@ -41,22 +42,27 @@ public final class ZoneWarsClient {
         ru.zonewars.client.map.XaeroWaypointBridge.register();
         ru.zonewars.client.map.CampChatMapOverlay.register();
         event.enqueueWork(() -> net.minecraft.client.gui.screens.MenuScreens.register(
-            ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
-            ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
+                ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
+                ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
     }
 
     private static void clientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null && !minecraft.player.isAlive() && minecraft.screen instanceof DeathScreen) {
-            minecraft.setScreen(new ZoneMapScreen(true));
+            // Death flow lives inside the campchat PDA deployment view now.
+            CampChatMapOverlay.openDeployment(minecraft);
             ZoneWarsNetworking.requestState();
         }
-        while (MAP.consumeClick()) { minecraft.setScreen(new ZoneMapScreen()); ZoneWarsNetworking.requestState(); }
+        while (MAP.consumeClick()) {
+            if (!CampChatMapOverlay.openPda(minecraft)) {
+                minecraft.setScreen(new ZoneMapScreen());
+            }
+            ZoneWarsNetworking.requestState();
+        }
         while (SQUAD.consumeClick()) ZoneWarsNetworking.openSquadMenu();
         while (PING.consumeClick()) if (minecraft.player != null)
             ZoneWarsNetworking.sendPing("DANGER", minecraft.player.getBlockX(), minecraft.player.getBlockZ());
         while (INVENTORY.consumeClick()) ZoneWarsNetworking.openTacticalInventory();
     }
 }
-
