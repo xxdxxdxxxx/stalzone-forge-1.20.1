@@ -1,0 +1,13 @@
+ZoneWars deployables
+
+CustomModelData:
+9101 Base Terminal
+9102 Field Tent
+9103 Squad Outpost
+
+Тест в игре 1.21.1:
+/give @s minecraft:paper[minecraft:custom_model_data=9101]
+/give @s minecraft:paper[minecraft:custom_model_data=9102]
+/give @s minecraft:paper[minecraft:custom_model_data=9103]
+
+Модели являются стартовыми low-poly JSON и могут быть открыты/импортированы в Blockbench.

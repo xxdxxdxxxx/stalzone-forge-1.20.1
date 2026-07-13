@@ -1,0 +1,32 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="xxdxxdxxxx"
+description='''STALKER-inspired TaCZ PvP: teams, capture points, economy, squads, clans, tactical HUD and respawns.'''
+displayTest="MATCH_VERSION"
+
+[[dependencies.${mod_id}]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="tacz"
+mandatory=true
+versionRange="[1.1.8,)"
+ordering="AFTER"
+side="BOTH"

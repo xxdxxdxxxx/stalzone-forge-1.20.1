@@ -1,0 +1,26 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/paper"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 9101
+      },
+      "model": "zonewars:item/deployables/base"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 9102
+      },
+      "model": "zonewars:item/deployables/tent"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 9103
+      },
+      "model": "zonewars:item/deployables/outpost"
+    }
+  ]
+}

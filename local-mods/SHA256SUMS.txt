@@ -1,0 +1,3 @@
+b5068b1d2b41e98dd69c369819b8da0a7d8b5ffc52ead3575092f76fa43e4d4d  local-mods/campchat-1.0.0.jar
+421a9fab7e5e89e43c076c863ed45970c84558598523ab8e328befd57a3941b0  local-mods/stalker_decor_mod_1.20.1.jar
+eb7f9057c554b50814515c43771226c2ffe7cd542216d837f081d9b5fd18a9b5  local-mods/stalkercubedreborn_1.0.9_fix_forge.jar
