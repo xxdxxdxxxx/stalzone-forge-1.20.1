@@ -27,13 +27,17 @@ class ZoneWarsRulesTest {
     }
 
     @Test
-    void excessiveVerticalDifferenceIsRejected() {
-        assertFalse(ZoneWarsRules.insideCaptureCylinder(0.0, 6.1, 0.0, 3.0));
+    void largeTerrainHeightDifferenceIsAccepted() {
+        // Regression: superflat terrain at y=-60 vs a point saved at y=63.
+        // Capture zones are full-height cylinders, so this must be inside.
+        assertTrue(ZoneWarsRules.insideCaptureCylinder(1.8, -123.0, 0.0, 9.0));
+        assertTrue(ZoneWarsRules.insideCaptureCylinder(0.0, 6.1, 0.0, 3.0));
     }
 
     @Test
     void invalidNumbersAndRadiusAreRejected() {
         assertFalse(ZoneWarsRules.insideCaptureCylinder(Double.NaN, 0.0, 0.0, 5.0));
+        assertFalse(ZoneWarsRules.insideCaptureCylinder(0.0, Double.NaN, 0.0, 5.0));
         assertFalse(ZoneWarsRules.insideCaptureCylinder(0.0, 0.0, 0.0, Double.POSITIVE_INFINITY));
         assertFalse(ZoneWarsRules.insideCaptureCylinder(0.0, 0.0, 0.0, 0.0));
         assertFalse(ZoneWarsRules.insideCaptureCylinder(0.0, 0.0, 0.0, -1.0));
