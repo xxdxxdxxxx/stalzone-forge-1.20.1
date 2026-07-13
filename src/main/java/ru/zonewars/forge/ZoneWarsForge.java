@@ -41,6 +41,11 @@ import java.time.*;
 import java.util.*;
 import java.util.function.Consumer;
 
+import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.eventbus.api.EventPriority;
+import java.lang.reflect.Method;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 @Mod(ZoneWarsForge.MOD_ID)
 public final class ZoneWarsForge {
     public static final String MOD_ID = "zonewars";
@@ -73,6 +78,7 @@ public final class ZoneWarsForge {
         // Never overwrite unreadable persistence files with defaults at startup.
         storage.ensureMatchHistory();
         ZoneWarsNetwork.register(this::handleClientAction);
+        ru.zonewars.forge.menu.ZoneWarsMenus.register(net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext.get().getModEventBus());
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
         MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
         MinecraftForge.EVENT_BUS.addListener(this::onServerTick);
@@ -209,6 +215,18 @@ public final class ZoneWarsForge {
             return;
         }
         if (action.equalsIgnoreCase("request_state")) {
+            clientBridge.sendState(player);
+            return;
+        }
+        if (action.equalsIgnoreCase("inventory:open")) {
+            net.minecraftforge.network.NetworkHooks.openScreen(player,
+                new net.minecraft.world.SimpleMenuProvider(
+                    (windowId, inventory, ignored) -> new ru.zonewars.forge.menu.ZoneInventoryMenu(windowId, inventory),
+                    net.minecraft.network.chat.Component.literal("Tactical Inventory")));
+            return;
+        }
+        if (action.toLowerCase(Locale.ROOT).startsWith("buy:")) {
+            buyForPlayer(player, action.substring("buy:".length()));
             clientBridge.sendState(player);
             return;
         }
@@ -3228,70 +3246,88 @@ public final class ZoneWarsForge {
         }
     }
 
-    private static final class TaczEvents {
-        private static void register(Consumer<Object> shoot, Consumer<Object> hurtPre, Consumer<Object> hurtPost, Consumer<Object> kill) {
-            registerForgeEvent("com.tacz.guns.api.event.common.GunShootEvent", shoot);
-            registerForgeEvent("com.tacz.guns.api.event.common.GunFireEvent", shoot);
-            registerForgeEvent("com.tacz.guns.api.event.common.EntityHurtByGunEvent$Pre", hurtPre);
-            registerForgeEvent("com.tacz.guns.api.event.common.EntityHurtByGunEvent$Post", hurtPost);
-            registerForgeEvent("com.tacz.guns.api.event.common.EntityKillByGunEvent", kill);
+    /**
+     * Native Forge EventBus adapter for TaCZ 1.1.8 combat events.
+     * Compiles without the TaCZ jar: event classes are resolved by name at
+     * runtime, but listeners are registered on the real MinecraftForge.EVENT_BUS.
+     */
+    static final class TaczEvents {
+        private static final String PKG = "com.tacz.guns.api.event.common.";
+        private static final Map<String, Optional<Method>> METHOD_CACHE = new ConcurrentHashMap<>();
+        private static boolean registered;
+
+        private TaczEvents() {}
+
+        static synchronized void register(Consumer<Object> shoot, Consumer<Object> hurtPre,
+                                          Consumer<Object> hurtPost, Consumer<Object> kill) {
+            if (registered) return;
+            registered = true;
+            int hooked = 0;
+            hooked += hook(PKG + "GunShootEvent", shoot);
+            int hurt = hook(PKG + "EntityHurtByGunEvent$Pre", hurtPre)
+                     + hook(PKG + "EntityHurtByGunEvent$Post", hurtPost);
+            if (hurt == 0) {
+                hurt = hook(PKG + "EntityHurtByGunEvent", hurtPost);
+            }
+            hooked += hurt;
+            hooked += hook(PKG + "EntityKillByGunEvent", kill);
+            if (hooked == 0) {
+                System.err.println("[ZoneWars] TaCZ not detected; using generic Forge damage events only.");
+            } else {
+                System.out.println("[ZoneWars] Hooked " + hooked + " native TaCZ EventBus listeners.");
+            }
         }
 
-        @SuppressWarnings({"rawtypes", "unchecked"})
-        private static void registerForgeEvent(String eventClassName, Consumer<Object> consumer) {
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private static int hook(String className, Consumer<Object> handler) {
             try {
-                Class<?> eventClass = Class.forName(eventClassName);
-                Method addListener = Arrays.stream(MinecraftForge.EVENT_BUS.getClass().getMethods())
-                    .filter(method -> method.getName().equals("addListener"))
-                    .filter(method -> method.getParameterCount() == 4)
-                    .filter(method -> method.getParameterTypes()[2] == Class.class)
-                    .findFirst()
-                    .orElseThrow(() -> new NoSuchMethodException("Forge EventBus addListener overload"));
-                Class<? extends Enum> priorityType = (Class<? extends Enum>) addListener.getParameterTypes()[0].asSubclass(Enum.class);
-                Object normalPriority = Enum.valueOf(priorityType, "NORMAL");
-                addListener.invoke(MinecraftForge.EVENT_BUS, normalPriority, true, eventClass, consumer);
-                System.out.println(PREFIX + "Registered TaCZ Forge event: " + eventClassName);
-            } catch (ReflectiveOperationException | RuntimeException exception) {
-                System.err.println(PREFIX + "Could not register TaCZ event " + eventClassName + ": " + exception.getMessage());
+                Class<?> type = Class.forName(className);
+                if (!Event.class.isAssignableFrom(type)) return 0;
+                MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, (Class) type, (Consumer) handler);
+                return 1;
+            } catch (ClassNotFoundException absent) {
+                return 0;
+            } catch (Throwable error) {
+                System.err.println("[ZoneWars] Failed to hook TaCZ event " + className + ": " + error);
+                return 0;
             }
         }
 
-        private static boolean isServer(Object event) {
+        static boolean isServer(Object event) {
             Object side = invokeOrNull(event, "getLogicalSide");
-            Object value = side == null ? null : invokeOrNull(side, "isServer");
-            if (value instanceof Boolean result) {
-                return result;
-            }
-            for (String getter : List.of("getShooter", "getAttacker", "getHurtEntity", "getKilledEntity")) {
-                Entity entity = entity(event, getter);
-                if (entity != null) {
-                    return !entity.level().isClientSide;
-                }
-            }
-            return false;
+            return side != null && "SERVER".equals(String.valueOf(side));
         }
 
-        private static Entity entity(Object event, String getter) {
-            Object value = invokeOrNull(event, getter);
+        static void cancel(Object event) {
+            if (event instanceof Event forgeEvent && forgeEvent.isCancelable()) {
+                forgeEvent.setCanceled(true);
+            }
+        }
+
+        static Entity entity(Object event, String accessor) {
+            Object value = invokeOrNull(event, accessor);
             return value instanceof Entity entity ? entity : null;
         }
 
-        private static float floatValue(Object event, String getter) {
-            Object value = invokeOrNull(event, getter);
-            return value instanceof Number number ? number.floatValue() : 0.0f;
+        static float floatValue(Object event, String accessor) {
+            Object value = invokeOrNull(event, accessor);
+            return value instanceof Number number ? number.floatValue() : 0F;
         }
 
-        private static void cancel(Object event) {
+        static Object invokeOrNull(Object event, String accessor) {
+            if (event == null) return null;
+            String key = event.getClass().getName() + "#" + accessor;
+            Optional<Method> method = METHOD_CACHE.computeIfAbsent(key, ignored -> {
+                try {
+                    return Optional.of(event.getClass().getMethod(accessor));
+                } catch (NoSuchMethodException missing) {
+                    return Optional.empty();
+                }
+            });
+            if (method.isEmpty()) return null;
             try {
-                invoke(event, "setCanceled", true);
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-            }
-        }
-
-        private static Object invokeOrNull(Object target, String methodName) {
-            try {
-                return invoke(target, methodName);
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                return method.get().invoke(event);
+            } catch (Throwable error) {
                 return null;
             }
         }

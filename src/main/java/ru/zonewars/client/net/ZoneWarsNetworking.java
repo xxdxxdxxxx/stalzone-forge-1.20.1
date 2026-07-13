@@ -10,4 +10,6 @@ public final class ZoneWarsNetworking {
     public static void sendPing(String type, int x, int z) { ZoneWarsNetwork.sendAction("ping:" + type + ":" + x + ":" + z); }
     public static void setWaypoint(int x, int z) { ZoneWarsNetwork.sendAction("waypoint:" + x + ":" + z); }
     public static void openSquadMenu() { ZoneWarsNetwork.sendAction("squad:menu"); }
+    public static void openTacticalInventory() { ZoneWarsNetwork.sendAction("inventory:open"); }
+    public static void buy(String itemId) { ZoneWarsNetwork.sendAction("buy:" + itemId); }
 }

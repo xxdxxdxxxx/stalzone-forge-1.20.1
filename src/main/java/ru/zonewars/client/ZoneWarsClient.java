@@ -13,7 +13,6 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.lwjgl.glfw.GLFW;
 import ru.zonewars.client.net.ZoneWarsNetworking;
-import ru.zonewars.client.ui.ZoneInventoryScreen;
 import ru.zonewars.client.ui.ZoneMapScreen;
 import ru.zonewars.client.ui.ZoneWarsHud;
 import ru.zonewars.forge.ZoneWarsForge;
@@ -39,6 +38,9 @@ public final class ZoneWarsClient {
     public static void clientSetup(FMLClientSetupEvent event) {
         MinecraftForge.EVENT_BUS.addListener(ZoneWarsClient::clientTick);
         ZoneWarsHud.register();
+        event.enqueueWork(() -> net.minecraft.client.gui.screens.MenuScreens.register(
+            ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
+            ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
     }
 
     private static void clientTick(TickEvent.ClientTickEvent event) {
@@ -52,6 +54,6 @@ public final class ZoneWarsClient {
         while (SQUAD.consumeClick()) ZoneWarsNetworking.openSquadMenu();
         while (PING.consumeClick()) if (minecraft.player != null)
             ZoneWarsNetworking.sendPing("DANGER", minecraft.player.getBlockX(), minecraft.player.getBlockZ());
-        while (INVENTORY.consumeClick()) minecraft.setScreen(new ZoneInventoryScreen());
+        while (INVENTORY.consumeClick()) ZoneWarsNetworking.openTacticalInventory();
     }
 }
