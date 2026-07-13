@@ -165,6 +165,7 @@ public final class ZoneWarsForge {
                                     arenaAddPoint(context.getSource(), StringArgumentType.getString(context, "id"), StringArgumentType.getString(context, "name"), StringArgumentType.getString(context, "radius"))))))))
                 .then(Commands.literal("shop")
                     .then(Commands.literal("add").executes(context -> arenaAddShop(context.getSource()))))
+                .then(Commands.literal("capturedebug").executes(context -> captureDebug(context.getSource())))
                 .then(Commands.literal("state").executes(context -> state(context.getSource()))));
     }
 
@@ -722,9 +723,37 @@ public final class ZoneWarsForge {
             error(source, "Bad radius.");
             return 0;
         }
+        if (!Double.isFinite(radius) || radius < 1.0 || radius > 128.0) {
+            error(source, "Radius must be between 1 and 128 blocks.");
+            return 0;
+        }
         matches.addPoint(new CapturePointData(id, name, LocationSpec.from(player), radius));
         storage.saveArena(matches.arena());
         feedback(source, "Capture point saved: " + id);
+        return 1;
+    }
+
+    private int captureDebug(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        feedback(source, "Capture debug: phase=" + matches.phase().name() + ", team="
+            + matches.teamOf(player.getUUID()).map(Enum::name).orElse("NONE"));
+        for (CapturePoint point : matches.points()) {
+            LocationSpec location = point.data().location();
+            double dx = player.getX() - location.x();
+            double dy = player.getY() - location.y();
+            double dz = player.getZ() - location.z();
+            double horizontal = Math.sqrt(dx * dx + dz * dz);
+            boolean sameWorld = CapturePoint.worldMatches(player.serverLevel(), location.world());
+            boolean inside = sameWorld && horizontal <= point.data().radius()
+                && Math.abs(dy) <= Math.max(6.0, point.data().radius());
+            feedback(source, point.data().id() + ": world=" + sameWorld
+                + ", horizontal=" + String.format(Locale.ROOT, "%.1f", horizontal)
+                + ", dy=" + String.format(Locale.ROOT, "%.1f", dy)
+                + ", radius=" + point.data().radius()
+                + ", inside=" + inside
+                + ", status=" + point.status().name()
+                + ", progress=" + Math.round(point.progress()));
+        }
         return 1;
     }
 
@@ -2811,10 +2840,16 @@ public final class ZoneWarsForge {
                 if (team == null || !worldMatches(player.serverLevel(), data.location().world())) {
                     continue;
                 }
+                if (!player.isAlive() || player.isSpectator()) {
+                    continue;
+                }
                 double dx = player.getX() - data.location().x();
                 double dy = player.getY() - data.location().y();
                 double dz = player.getZ() - data.location().z();
-                if (dx * dx + dy * dy + dz * dz <= radiusSquared) {
+                // Capture zones are vertical cylinders. A 3D sphere made valid players
+                // fall outside the zone when terrain height differed from the saved Y.
+                double verticalLimit = Math.max(6.0, data.radius());
+                if (dx * dx + dz * dz <= radiusSquared && Math.abs(dy) <= verticalLimit) {
                     present.merge(team, 1, Integer::sum);
                 }
             }
