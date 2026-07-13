@@ -775,8 +775,7 @@ public final class ZoneWarsForge {
             double dz = player.getZ() - location.z();
             double horizontal = Math.sqrt(dx * dx + dz * dz);
             boolean sameWorld = CapturePoint.worldMatches(player.serverLevel(), location.world());
-            boolean inside = sameWorld && horizontal <= point.data().radius()
-                && Math.abs(dy) <= Math.max(6.0, point.data().radius());
+            boolean inside = sameWorld && ZoneWarsRules.insideCaptureCylinder(dx, dy, dz, point.data().radius());
             feedback(source, point.data().id() + ": world=" + sameWorld
                 + ", horizontal=" + String.format(Locale.ROOT, "%.1f", horizontal)
                 + ", dy=" + String.format(Locale.ROOT, "%.1f", dy)

@@ -2,18 +2,23 @@ package ru.zonewars.forge;
 
 /** Pure gameplay calculations that can be tested without starting Minecraft. */
 public final class ZoneWarsRules {
-    private static final double MIN_CAPTURE_VERTICAL_RANGE = 6.0;
 
     private ZoneWarsRules() {
     }
 
+    /**
+     * Capture zones are 2D circles on the map. The check deliberately ignores
+     * vertical distance: arena points may be saved at a different height than
+     * the terrain players actually stand on (superflat worlds, hills, rebuilt
+     * maps), and that must never block capturing. The capture cylinder
+     * therefore spans the full world height.
+     */
     public static boolean insideCaptureCylinder(double dx, double dy, double dz, double radius) {
         if (!Double.isFinite(dx) || !Double.isFinite(dy) || !Double.isFinite(dz)
-            || !Double.isFinite(radius) || radius <= 0.0) {
+                || !Double.isFinite(radius) || radius <= 0.0) {
             return false;
         }
-        double verticalLimit = Math.max(MIN_CAPTURE_VERTICAL_RANGE, radius);
-        return dx * dx + dz * dz <= radius * radius && Math.abs(dy) <= verticalLimit;
+        return dx * dx + dz * dz <= radius * radius;
     }
 
     public static final int MAX_MONEY_BALANCE = 1_000_000;

@@ -61,7 +61,7 @@ public final class ZoneWarsHud {
         drawTopBar(graphics, client, snapshot);
         int nextY = drawSquad(graphics, client, snapshot);
         drawKillFeed(graphics, client, snapshot, nextY + 8);
-        drawRoundMiniMap(graphics, client, snapshot);
+        if (!ru.zonewars.client.map.XaeroWaypointBridge.active()) drawMiniMap(graphics, client, snapshot);
         drawHitMarker(graphics, client, snapshot);
     }
 
@@ -392,104 +392,5 @@ public final class ZoneWarsHud {
     private static String trim(String value, int max) {
         if (value == null) return "";
         return value.length() <= max ? value : value.substring(0, max);
-    }
-
-    // ------------------------------------------------------------ round radar
-
-    private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
-        int radius = 56;
-        int cx = graphics.guiWidth() - radius - 16;
-        int cy = radius + 40;
-        double px = client.player.getX();
-        double pz = client.player.getZ();
-        double range = 110.0;
-
-        // Circular backdrop drawn as horizontal strips.
-        for (int dy = -radius; dy <= radius; dy++) {
-            int half = (int) Math.floor(Math.sqrt((double) radius * radius - (double) dy * dy));
-            graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0xD20D1410);
-        }
-        // Inner range ring + crosshair.
-        drawRing(graphics, cx, cy, radius - 21, 0x2ECAD7C2);
-        graphics.fill(cx - radius + 6, cy, cx + radius - 6, cy + 1, 0x1CCAD7C2);
-        graphics.fill(cx, cy - radius + 6, cx + 1, cy + radius - 6, 0x1CCAD7C2);
-        // Rim.
-        drawRing(graphics, cx, cy, radius, 0xFF222B21);
-        drawRing(graphics, cx, cy, radius - 1, 0xFF71835C);
-        graphics.drawCenteredString(client.font, "N", cx, cy - radius + 5, TEXT);
-
-        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (!snapshot.team().equals(respawn.team())) {
-                continue;
-            }
-            int[] pos = radarPos(cx, cy, radius, range, px, pz, respawn.x(), respawn.z());
-            int color = respawn.available() ? spawnColor(respawn.kind(), respawn.team()) : 0xFF606B73;
-            graphics.fill(pos[0] - 2, pos[1] - 2, pos[0] + 3, pos[1] + 3, 0xFF0B1117);
-            graphics.renderOutline(pos[0] - 2, pos[1] - 2, 5, 5, color);
-        }
-        for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
-            int[] pos = radarPos(cx, cy, radius, range, px, pz, marker.x(), marker.z());
-            graphics.drawCenteredString(client.font, markerLabel(marker.type()), pos[0], pos[1] - 4, markerColor(marker.type()));
-        }
-        for (ZoneWarsState.PlayerState player : snapshot.players()) {
-            if (player.self() || !player.squad()) {
-                continue;
-            }
-            int[] pos = radarPos(cx, cy, radius, range, px, pz, player.x(), player.z());
-            graphics.fill(pos[0] - 1, pos[1] - 1, pos[0] + 2, pos[1] + 2, GREEN);
-        }
-        for (ZoneWarsState.PointState point : snapshot.points()) {
-            int[] pos = radarPos(cx, cy, radius, range, px, pz, point.x(), point.z());
-            int color = pointColor(point);
-            if (pos[2] == 1) {
-                // Out of range: small chevron pinned to the rim.
-                graphics.fill(pos[0] - 2, pos[1] - 2, pos[0] + 3, pos[1] + 3, color);
-            } else {
-                graphics.fill(pos[0] - 5, pos[1] - 5, pos[0] + 5, pos[1] + 5, 0xD90B1117);
-                graphics.renderOutline(pos[0] - 5, pos[1] - 5, 10, 10, color);
-                graphics.drawCenteredString(client.font, pointLabel(point), pos[0], pos[1] - 4, TEXT);
-            }
-        }
-
-        graphics.drawCenteredString(client.font, radarArrow(snapshot.selfYaw()), cx, cy - 4, TEXT);
-        graphics.drawCenteredString(client.font, (int) px + " " + (int) pz, cx, cy + radius + 5, MUTED);
-    }
-
-    private static int[] radarPos(int cx, int cy, int radius, double range, double px, double pz, int x, int z) {
-        double dx = x - px;
-        double dz = z - pz;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-        int clamped = 0;
-        if (dist > range) {
-            dx = dx / dist * range;
-            dz = dz / dist * range;
-            clamped = 1;
-        }
-        double scale = (radius - 7) / range;
-        return new int[] { cx + (int) Math.round(dx * scale), cy + (int) Math.round(dz * scale), clamped };
-    }
-
-    private static void drawRing(GuiGraphics graphics, int cx, int cy, int r, int color) {
-        int steps = Math.max(60, r * 7);
-        for (int i = 0; i < steps; i++) {
-            double angle = Math.PI * 2.0 * i / steps;
-            int x = cx + (int) Math.round(Math.cos(angle) * r);
-            int y = cy + (int) Math.round(Math.sin(angle) * r);
-            graphics.fill(x, y, x + 1, y + 1, color);
-        }
-    }
-
-    private static String radarArrow(int yaw) {
-        int normalized = ((yaw % 360) + 360) % 360;
-        if (normalized >= 45 && normalized < 135) {
-            return "<";
-        }
-        if (normalized >= 135 && normalized < 225) {
-            return "^";
-        }
-        if (normalized >= 225 && normalized < 315) {
-            return ">";
-        }
-        return "v";
     }
 }

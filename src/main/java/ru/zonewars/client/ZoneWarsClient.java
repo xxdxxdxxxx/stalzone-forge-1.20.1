@@ -38,6 +38,7 @@ public final class ZoneWarsClient {
     public static void clientSetup(FMLClientSetupEvent event) {
         MinecraftForge.EVENT_BUS.addListener(ZoneWarsClient::clientTick);
         ZoneWarsHud.register();
+        ru.zonewars.client.map.XaeroWaypointBridge.register();
         event.enqueueWork(() -> net.minecraft.client.gui.screens.MenuScreens.register(
             ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
             ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
