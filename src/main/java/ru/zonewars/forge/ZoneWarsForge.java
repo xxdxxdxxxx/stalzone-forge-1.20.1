@@ -1658,7 +1658,6 @@ public final class ZoneWarsForge {
     }
 
     private static final class EconomyService {
-        private static final int MAX_BALANCE = 1_000_000;
         private final int startingMoney;
         private final int captureIncomePerSecond;
         private final int killReward;
@@ -1681,13 +1680,12 @@ public final class ZoneWarsForge {
         }
 
         private void add(UUID playerId, int amount) {
-            long next = (long) balance(playerId) + Math.max(0, amount);
-            balances.put(playerId, (int) Math.min(MAX_BALANCE, next));
+            balances.put(playerId, ZoneWarsRules.addMoney(balance(playerId), amount));
         }
 
         private boolean spend(UUID playerId, int amount) {
             int current = balance(playerId);
-            if (current < amount) {
+            if (amount < 0 || current < amount) {
                 return false;
             }
             balances.put(playerId, current - amount);
@@ -2203,24 +2201,23 @@ public final class ZoneWarsForge {
                         stringValue(point, "id", "point" + points.size()),
                         stringValue(point, "displayName", stringValue(point, "id", "Point")),
                         location(object(point, "location"), fallback.capturePoints().get(Math.min(points.size(), fallback.capturePoints().size() - 1)).location()),
-                        boundedDouble(point, "radius", 9.0, 1.0, 128.0)
+                        ZoneWarsRules.captureRadius(doubleValue(point, "radius", 9.0))
                     ));
                 }
                 if (points.isEmpty()) {
                     points = fallback.capturePoints();
                 }
-                int maxPlayers = boundedInt(root, "maxPlayersPerTeam", fallback.maxPlayersPerTeam(), 1, 100);
-                int minPlayers = Math.min(maxPlayers,
-                    boundedInt(root, "minPlayersPerTeam", fallback.minPlayersPerTeam(), 0, 100));
+                int maxPlayers = ZoneWarsRules.maxPlayersPerTeam(intValue(root, "maxPlayersPerTeam", fallback.maxPlayersPerTeam()));
+                int minPlayers = ZoneWarsRules.minPlayersPerTeam(intValue(root, "minPlayersPerTeam", fallback.minPlayersPerTeam()), maxPlayers);
                 return new ArenaData(
                     minPlayers,
                     maxPlayers,
-                    boundedInt(root, "preparationSeconds", fallback.preparationSeconds(), 0, 600),
-                    boundedInt(root, "matchSeconds", fallback.matchSeconds(), 60, 21_600),
-                    boundedInt(root, "overtimeSeconds", fallback.overtimeSeconds(), 0, 3_600),
-                    boundedInt(root, "endScreenSeconds", fallback.endScreenSeconds(), 0, 300),
-                    boundedInt(root, "captureSeconds", fallback.captureSeconds(), 1, 600),
-                    boundedInt(root, "pointsPerSecond", fallback.pointsPerSecond(), 0, 1_000),
+                    ZoneWarsRules.preparationSeconds(intValue(root, "preparationSeconds", fallback.preparationSeconds())),
+                    ZoneWarsRules.matchSeconds(intValue(root, "matchSeconds", fallback.matchSeconds())),
+                    ZoneWarsRules.overtimeSeconds(intValue(root, "overtimeSeconds", fallback.overtimeSeconds())),
+                    ZoneWarsRules.endScreenSeconds(intValue(root, "endScreenSeconds", fallback.endScreenSeconds())),
+                    ZoneWarsRules.captureSeconds(intValue(root, "captureSeconds", fallback.captureSeconds())),
+                    ZoneWarsRules.pointsPerSecond(intValue(root, "pointsPerSecond", fallback.pointsPerSecond())),
                     location(object(root, "redSpawn"), fallback.redSpawn()),
                     location(object(root, "blueSpawn"), fallback.blueSpawn()),
                     List.copyOf(shops),
@@ -2448,11 +2445,11 @@ public final class ZoneWarsForge {
             }
             return new LocationSpec(
                 stringValue(object, "world", fallback.world()),
-                boundedDouble(object, "x", fallback.x(), -30_000_000.0, 30_000_000.0),
-                boundedDouble(object, "y", fallback.y(), -2_048.0, 2_048.0),
-                boundedDouble(object, "z", fallback.z(), -30_000_000.0, 30_000_000.0),
-                (float) boundedDouble(object, "yaw", fallback.yaw(), -360.0, 360.0),
-                (float) boundedDouble(object, "pitch", fallback.pitch(), -90.0, 90.0)
+                ZoneWarsRules.coordinate(doubleValue(object, "x", fallback.x()), fallback.x()),
+                ZoneWarsRules.yCoordinate(doubleValue(object, "y", fallback.y()), fallback.y()),
+                ZoneWarsRules.coordinate(doubleValue(object, "z", fallback.z()), fallback.z()),
+                (float) ZoneWarsRules.yaw(doubleValue(object, "yaw", fallback.yaw()), fallback.yaw()),
+                (float) ZoneWarsRules.pitch(doubleValue(object, "pitch", fallback.pitch()), fallback.pitch())
             );
         }
 
