@@ -60,6 +60,12 @@ public final class XaeroWaypointBridge {
         return xaeroLoaded && !broken;
     }
 
+    private static volatile long deployHoldUntil;
+
+    /** Pause auto-reopening of the deployment map right after DEPLOY is pressed. */
+    public static void markDeploying() {
+        deployHoldUntil = System.currentTimeMillis() + 4000L;
+    }
     private static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
             return;
@@ -73,7 +79,7 @@ public final class XaeroWaypointBridge {
         // Auto-open the PDA deployment map when a respawn choice is pending.
         if (!snapshot.respawnPrompt()) {
             promptHandled = false;
-        } else if (!promptHandled && minecraft.screen == null && !"NONE".equals(snapshot.team())) {
+        } else if (!promptHandled && System.currentTimeMillis() >= deployHoldUntil && minecraft.screen == null && !"NONE".equals(snapshot.team())) {
             minecraft.setScreen(new ZoneMapScreen(true));
             promptHandled = true;
         }

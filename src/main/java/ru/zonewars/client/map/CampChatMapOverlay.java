@@ -104,6 +104,13 @@ public final class CampChatMapOverlay {
                 double cameraX = ((Number) cameraXField.get(guiMap)).doubleValue();
                 double cameraZ = ((Number) cameraZField.get(guiMap)).doubleValue();
                 double scale = ((Number) scaleField.get(guiMap)).doubleValue();
+                // Xaero's GuiMap scale is expressed in raw framebuffer pixels per
+                // block, while GuiGraphics works in gui-scaled pixels. Without this
+                // correction markers drift away from their true positions.
+                double uiScale = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScale();
+                if (uiScale > 0.0001) {
+                    scale /= uiScale;
+                }
                 if (scale > 0.0001) {
                     drawMarkers(graphics, minecraft, snapshot,
                             new WorldTransform(px + pw / 2.0, py + ph / 2.0, cameraX, cameraZ, scale));

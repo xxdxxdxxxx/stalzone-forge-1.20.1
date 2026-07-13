@@ -79,8 +79,7 @@ public final class ZoneMapScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (respawnMode && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             if (respawnButton != null && respawnButton.contains(mouseX, mouseY) && selectedAvailable(ZoneWarsState.snapshot())) {
-                ZoneWarsNetworking.confirmRespawn();
-                this.onClose();
+                deployNow();
                 return true;
             }
             for (RectTarget target : respawnCards) {
@@ -359,6 +358,20 @@ public final class ZoneMapScreen extends Screen {
         graphics.drawString(this.font, "Choose a safe return point", 24, 31, MUTED, false);
     }
 
+    private void deployNow() {
+        // Dead players must respawn through the vanilla packet first; the server
+        // teleports them to the selected spawn inside PlayerRespawnEvent.
+        // Sending "respawn:confirm" while dead does nothing server-side, which
+        // used to soft-lock the deployment screen (animation replaying forever).
+        ru.zonewars.client.map.XaeroWaypointBridge.markDeploying();
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player != null && mc.player.isDeadOrDying()) {
+            mc.player.respawn();
+        } else {
+            ZoneWarsNetworking.confirmRespawn();
+        }
+        this.onClose();
+    }
     private void selectRespawn(String kind) {
         localSelectedRespawn = kind;
         selectionPulseStarted = System.currentTimeMillis();
@@ -536,8 +549,7 @@ public final class ZoneMapScreen extends Screen {
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_ENTER && selectedAvailable(snapshot)) {
-                ZoneWarsNetworking.confirmRespawn();
-                this.onClose();
+                deployNow();
                 return true;
             }
         }

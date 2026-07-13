@@ -407,8 +407,9 @@ public final class ZoneWarsHud {
         // Circular backdrop drawn as horizontal strips.
         for (int dy = -radius; dy <= radius; dy++) {
             int half = (int) Math.floor(Math.sqrt((double) radius * radius - (double) dy * dy));
-            graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0xD20D1410);
+            graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0xFF0D1410);
         }
+        drawRadarTerrain(graphics, client, cx, cy, radius, range, px, pz);
         // Inner range ring + crosshair.
         drawRing(graphics, cx, cy, radius - 21, 0x2ECAD7C2);
         graphics.fill(cx - radius + 6, cy, cx + radius - 6, cy + 1, 0x1CCAD7C2);
@@ -469,6 +470,110 @@ public final class ZoneWarsHud {
         return new int[] { cx + (int) Math.round(dx * scale), cy + (int) Math.round(dz * scale), clamped };
     }
 
+    // ------------------------------------------------- radar terrain layer
+
+    private static final int TERRAIN_TEX = 160;
+    private static net.minecraft.client.renderer.texture.DynamicTexture terrainTexture;
+    private static net.minecraft.resources.ResourceLocation terrainLocation;
+    private static long terrainBuiltAt;
+    private static double terrainAnchorX;
+    private static double terrainAnchorZ;
+    private static double terrainRange;
+    private static boolean terrainBroken;
+
+    private static void drawRadarTerrain(GuiGraphics graphics, Minecraft client, int cx, int cy, int radius, double range, double px, double pz) {
+        if (terrainBroken || client.level == null) {
+            return;
+        }
+        try {
+            long now = System.currentTimeMillis();
+            if (terrainTexture == null || now - terrainBuiltAt > 700L
+                    || Math.abs(px - terrainAnchorX) > range * 0.25
+                    || Math.abs(pz - terrainAnchorZ) > range * 0.25
+                    || terrainRange != range) {
+                rebuildTerrain(client, px, pz, range);
+            }
+            if (terrainLocation == null) {
+                return;
+            }
+            int r = radius - 2;
+            double pxPerBlock = (radius - 7) / range;
+            double texPerBlock = (TERRAIN_TEX / 2.0) / (range * 1.4);
+            double texPerScreen = texPerBlock / pxPerBlock;
+            float offU = (float) (TERRAIN_TEX / 2.0 + (px - terrainAnchorX) * texPerBlock);
+            float offV = (float) (TERRAIN_TEX / 2.0 + (pz - terrainAnchorZ) * texPerBlock);
+            int rowTexHeight = Math.max(1, (int) Math.round(texPerScreen));
+            for (int dy = -r; dy <= r; dy++) {
+                int half = (int) Math.floor(Math.sqrt((double) r * r - (double) dy * dy));
+                if (half <= 0) {
+                    continue;
+                }
+                float u = offU + (float) (-half * texPerScreen);
+                float v = offV + (float) (dy * texPerScreen);
+                int uWidth = Math.max(1, (int) Math.round(half * 2 * texPerScreen));
+                graphics.blit(terrainLocation, cx - half, cy + dy, half * 2, 1, u, v, uWidth, rowTexHeight, TERRAIN_TEX, TERRAIN_TEX);
+            }
+            // Slight dark tint so chips and text stay readable on bright terrain.
+            for (int dy = -r; dy <= r; dy++) {
+                int half = (int) Math.floor(Math.sqrt((double) r * r - (double) dy * dy));
+                graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0x460A0E08);
+            }
+        } catch (Throwable error) {
+            terrainBroken = true;
+        }
+    }
+
+    private static void rebuildTerrain(Minecraft client, double px, double pz, double range) {
+        if (terrainTexture == null) {
+            terrainTexture = new net.minecraft.client.renderer.texture.DynamicTexture(TERRAIN_TEX, TERRAIN_TEX, true);
+            terrainLocation = client.getTextureManager().register("zonewars_radar_terrain", terrainTexture);
+        }
+        com.mojang.blaze3d.platform.NativeImage image = terrainTexture.getPixels();
+        if (image == null) {
+            return;
+        }
+        double texPerBlock = (TERRAIN_TEX / 2.0) / (range * 1.4);
+        net.minecraft.core.BlockPos.MutableBlockPos pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int ty = 0; ty < TERRAIN_TEX; ty++) {
+            for (int tx = 0; tx < TERRAIN_TEX; tx++) {
+                int wx = (int) Math.floor(px + (tx - TERRAIN_TEX / 2.0) / texPerBlock);
+                int wz = (int) Math.floor(pz + (ty - TERRAIN_TEX / 2.0) / texPerBlock);
+                image.setPixelRGBA(tx, ty, sampleTerrainColor(client.level, pos, wx, wz));
+            }
+        }
+        terrainTexture.upload();
+        terrainAnchorX = px;
+        terrainAnchorZ = pz;
+        terrainRange = range;
+        terrainBuiltAt = System.currentTimeMillis();
+    }
+
+    private static int sampleTerrainColor(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos.MutableBlockPos pos, int x, int z) {
+        pos.set(x, 0, z);
+        if (!level.hasChunkAt(pos)) {
+            return 0;
+        }
+        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+        if (y <= level.getMinBuildHeight()) {
+            return 0;
+        }
+        pos.set(x, y - 1, z);
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+        net.minecraft.world.level.material.MapColor color = state.getMapColor(level, pos);
+        if (color == net.minecraft.world.level.material.MapColor.NONE) {
+            return 0;
+        }
+        int yNorth = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z - 1);
+        net.minecraft.world.level.material.MapColor.Brightness brightness;
+        if (y > yNorth) {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.HIGH;
+        } else if (y < yNorth) {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.LOW;
+        } else {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.NORMAL;
+        }
+        return color.calculateRGBColor(brightness);
+    }
     private static void drawRing(GuiGraphics graphics, int cx, int cy, int r, int color) {
         int steps = Math.max(60, r * 7);
         for (int i = 0; i < steps; i++) {
