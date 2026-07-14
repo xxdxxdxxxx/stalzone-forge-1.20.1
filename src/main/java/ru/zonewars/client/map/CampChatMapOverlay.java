@@ -255,6 +255,11 @@ public final class CampChatMapOverlay {
         Font font = minecraft.font;
         long now = System.currentTimeMillis();
 
+        double mouseX = minecraft.mouseHandler.xpos() * (double) minecraft.getWindow().getGuiScaledWidth()
+                / (double) Math.max(1, minecraft.getWindow().getScreenWidth());
+        double mouseY = minecraft.mouseHandler.ypos() * (double) minecraft.getWindow().getGuiScaledHeight()
+                / (double) Math.max(1, minecraft.getWindow().getScreenHeight());
+
         if (transformValid && lastScale > 0.0001) {
             int index = 0;
             for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
@@ -266,7 +271,8 @@ public final class CampChatMapOverlay {
                 x = Math.max(px + 16, Math.min(px + pw - 16, x));
                 y = Math.max(py + 30, Math.min(py + ph - 24, y));
                 boolean selected = respawn.kind() != null && respawn.kind().equals(snapshot.selectedRespawn());
-                drawDeployIcon(graphics, font, x, y, respawn, selected, index + 1, now);
+                boolean hovered = mouseX >= x - 11 && mouseX <= x + 11 && mouseY >= y - 11 && mouseY <= y + 11;
+                drawDeployIcon(graphics, font, x, y, respawn, selected, hovered, snapshot.respawnPrompt(), index + 1, now);
                 cardRects.add(new int[] { x - 11, y - 11, x + 11, y + 11 });
                 cardKinds.add(respawn.kind());
                 index++;
@@ -286,7 +292,13 @@ public final class CampChatMapOverlay {
         String kind = snapshot.selectedRespawn();
         boolean hasSelection = kind != null && !kind.isBlank();
         graphics.fill(x1, y1, x2, y2, hasSelection ? 0xF0173A26 : 0xE0101613);
-        graphics.renderOutline(x1, y1, barW, y2 - y1, hasSelection ? ACCENT : 0xFF39424B);
+        int barOutline = 0xFF39424B;
+        if (hasSelection) {
+            int alpha = Math.max(120, Math.min(255,
+                    (int) (188.0 + 67.0 * Math.sin((now % 1200L) / 1200.0 * Math.PI * 2.0))));
+            barOutline = (alpha << 24) | (ACCENT & 0xFFFFFF);
+        }
+        graphics.renderOutline(x1, y1, barW, y2 - y1, barOutline);
         String label = hasSelection ? "DEPLOY: " + kindTitle(kind) + " [ENTER]" : "SELECT A SPAWN POINT";
         graphics.drawCenteredString(font, label, (x1 + x2) / 2, y1 + 7, hasSelection ? ACCENT : DISABLED);
         deployRect = hasSelection ? new int[] { x1, y1, x2, y2 } : null;
@@ -294,7 +306,8 @@ public final class CampChatMapOverlay {
     }
 
     private static void drawDeployIcon(GuiGraphics graphics, Font font, int x, int y,
-            ZoneWarsState.RespawnState respawn, boolean selected, int hotkey, long now) {
+            ZoneWarsState.RespawnState respawn, boolean selected, boolean hovered, boolean canDeploy,
+            int hotkey, long now) {
         int color = selected ? ACCENT
                 : (respawn.available() ? respawnColor(respawn.kind(), respawn.team()) : DISABLED);
 
@@ -317,13 +330,21 @@ public final class CampChatMapOverlay {
         graphics.renderOutline(x - 9, y - 9, 18, 18, color);
         drawKindGlyph(graphics, x, y, respawn.kind(), color);
 
+        if (hovered && respawn.available()) {
+            graphics.renderOutline(x - 11, y - 11, 22, 22, 0xB0000000 | (color & 0xFFFFFF));
+        }
+
         String status;
         if (!respawn.available()) {
             status = "N/A";
         } else if (respawn.seconds() > 0) {
             status = respawn.seconds() + "s";
+        } else if (selected) {
+            status = hovered && canDeploy ? "CLICK TO DEPLOY" : "SELECTED";
+        } else if (hovered) {
+            status = "CLICK TO SELECT";
         } else {
-            status = selected ? "SELECTED" : String.valueOf(hotkey);
+            status = String.valueOf(hotkey);
         }
         graphics.drawCenteredString(font, kindTitle(respawn.kind()), x, y - 21, color);
         graphics.drawCenteredString(font, status, x, y + 12, selected ? ACCENT : 0xFFADBBB1);

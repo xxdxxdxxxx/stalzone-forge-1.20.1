@@ -1,171 +1,73 @@
-# StalZone / ZoneWars — Project Context
+# PROJECT_CONTEXT вЂ” AI / developer handoff
 
-> Updated: 2026-07-13. This is the source of truth for the next developer or AI.
+Read this before touching the code. It reflects the state of the branch
+`feature/tacz-native-events-and-server-inventory` (July 2026).
 
-## Fixed decisions
+## What this is
 
-- Active platform: **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**.
-- Do not move the active project back to Fabric 1.21.1 unless explicitly requested.
-- TaCZ runtime: native Forge `tacz-1.20.1-1.1.8-hotfix.jar`.
-- CampChat runtime: original Forge `campchat-1.0.0.jar` by `kltyton`.
-- Do not port the abandoned `campchat-fabric` module into the active tree.
-- Preserve CampChat author credit and permission restrictions.
-- Keep both ZoneWars Tactical Map and Xaero World Map; resolve their default `M` key conflict in controls.
-- Third-party JARs should not be committed to a public source repository without redistribution permission.
+ZoneWars: a STALKER-flavored RED vs BLUE PvP mod (Forge 1.20.1, Java 17, mod id `zonewars`,
+jar `zonewars-0.2.0-alpha.jar`). Development checkout: `C:\stalzone-forge`. Test instance:
+`C:\Users\xxdxxdxx\AppData\Roaming\ElyPrismLauncher\instances\1.20.1(2)\minecraft`.
 
-## Current source layout
+## Client architecture (src/main/java/ru/zonewars/)
 
-```text
-src/main/java/ru/zonewars/forge/ZoneWarsForge.java
-    Forge mod entrypoint and current gameplay implementation.
+| File | Role |
+| --- | --- |
+| `client/ZoneWarsClient.java` | Key bindings (M/O/G/I), client tick: on death opens the PDA deployment map; M opens the PDA map. |
+| `client/ClientStateReceiver.java` | Receives serialized match state; on `respawnPrompt` calls `CampChatMapOverlay.openDeployment`. NEVER open any other screen from here. |
+| `client/state/ZoneWarsState.java` | Parses/holds the `Snapshot` record (see protocol below). |
+| `client/net/ZoneWarsNetworking.java` | Client senders: `requestState()`, `chooseRespawn(kind)`, `confirmRespawn()`, `sendPing(type,x,z)`, `setWaypoint(x,z)`, `openSquadMenu()`, `openTacticalInventory()`. |
+| `client/map/CampChatMapOverlay.java` | THE map UI. Renders the ZoneWars layer over the campchat PDA map screen (reflection, `SCREEN_CLASS` = campchat screen FQN): header, capture points, teammates, respawn icons (flag/tent/mast glyphs) with hover + pulse animations, DEPLOY bar, mouse/keyboard handling (1-3, ENTER). `openPda`/`openDeployment` are the only entry points; `openDeployment` self-guards (cooldown, retry cap, no-op if PDA already open). Failures log as `[ZoneWars] PDA open failed:`. |
+| `client/map/XaeroWaypointBridge.java` | Reflection bridge to Xaero: mirrors capture points, own-team base/tent/rally respawns and pings as temporary waypoints every 40 ticks; auto-opens the deployment map on `respawnPrompt`; `markDeploying()` pauses reopening for 4s after DEPLOY. `active()` = Xaero minimap loaded and bridge healthy. |
+| `client/ui/ZoneWarsHud.java` | HUD: score bar, compass, point chips, squad panel (top-left, y=170 to clear Xaero's minimap). Custom round radar (baked AA disc/ring/arrow textures) renders ONLY when `XaeroWaypointBridge.active()` is false. |
+| `client/ui/ZoneInventoryContainerScreen.java` | Tactical inventory screen (WIP server container). |
+| `forge/*` | Server side: match rules, networking, kits, economy, respawn teleport via `PlayerRespawnEvent`. |
 
-src/main/java/ru/zonewars/forge/ZoneWarsNetwork.java
-    Forge SimpleChannel messages for client actions and server state.
+Deleted: `client/ui/ZoneMapScreen.java` (legacy fullscreen deployment screen). Do not reintroduce it.
 
-src/main/java/ru/zonewars/client/
-    Client initialization, key mappings and state receiver.
+## State protocol
 
-src/main/java/ru/zonewars/client/state/ZoneWarsState.java
-    Immutable client snapshot and JSON parsing.
+`Snapshot(phase, team, redScore, blueScore, seconds, selfYaw, selectedRespawn, respawnPrompt, mapTexture, bounds, bases, points, players, respawns, markers, killFeed, hit, selfStats)`.
+`RespawnState(kind, team, name, x, z, available, seconds, health, maxHealth)`; kinds `BASE|TENT|OUTPOST`, teams `RED|BLUE|NONE`.
+Server action strings: `request_state`, `respawn:<kind>`, `respawn:confirm`, `ping:<type>:<x>:<z>`, `waypoint:<x>:<z>`, `squad:menu`, `inventory:open`.
 
-src/main/java/ru/zonewars/client/ui/
-    Tactical HUD, map and inventory.
+## Respawn flow (current, working)
 
-docs/migration/reference/
-    Old Fabric sources for parity reference only. Never build these as active modules.
+1. Player dies -> server sets `respawnPrompt=true` -> `ClientStateReceiver`/client tick/bridge all funnel into `openDeployment` -> campchat PDA opens on the Map tab.
+2. Overlay draws base/tent/rally icons at world positions (clamped to the panel); click = `chooseRespawn`, click the selected icon again / ENTER / DEPLOY bar = `confirmRespawn` -> server teleports on respawn.
+3. Vanilla `DeathScreen` remains the last-resort fallback (retry cap 40) вЂ” its Respawn button still works.
 
-zonewars-pack/
-    Legacy resource-pack/model foundation.
-```
+## External mods (do not break)
 
-## Verified
+- **campchat 1.0.0** by `kltyton` вЂ” permission granted, non-commercial, keep credit. No sources; all integration is reflection (`com.kltyton.campchat.client.gui.CampChatScreen`, fields `activeTab`/`mapPanel`/`embeddedMap`, `$MainTab.MAP`, GuiMap `cameraX/cameraZ/scale`; divide scale by gui scale).
+- **Xaero Minimap 26.3.0 / World Map 1.43.0** вЂ” campchat embeds the world map; waypoint reflection supports both old (`xaero.common.minimap.waypoints.Waypoint`) and new (`xaero.hud.minimap.*`) class layouts. The red dotted "where I ran" trail on maps is Xaero footprints (user-side setting / config `footprints` line).
 
-- ForgeGradle project resolves with Forge 47.4.0 and Java 17.
-- `clean build` completes successfully.
-- Produced mod: `build/libs/zonewars-0.2.0-alpha.jar`.
-- A normal Forge 1.20.1 client loads ZoneWars, TaCZ, CampChat, Curios, GeckoLib and Xaero.
-- `/zw` commands are registered when the ZoneWars JAR is actually present in the instance.
-- ZoneWars map on `M` and tactical inventory on `I` open.
-- CampChat opens on `P`.
-- HUD/top bar/squad/minimap render after `/zw join auto`.
-- Severe join-time FPS drop was traced to rendering the complete HUD after every vanilla overlay event. Fixed by rendering only after `VanillaGuiOverlay.HOTBAR`.
+## Dev workflow (Windows PowerShell 5.1)
 
-## TaCZ bridge status
+- Patches are delivered as `apply-*.ps1` scripts: full-file here-strings + `Write-NoBom` (UTF-8 no BOM, `.bak` backup) + Gradle build gate + `git add -A -- . ":(exclude)*.bak" ":(exclude)*.ps1"` + commit + push. Git writes to stderr: always run git/gradle through `cmd /c "... 2>&1"` (`Invoke-Native`).
+- JDK 17 pinned via `gradle.properties` (`org.gradle.java.home`). Gradle 8.10.2 + ForgeGradle 6.
+- `deploy-zonewars-to-instance.ps1` copies the jar to the instance and ensures Xaero mods from Modrinth.
+- Known CI issue: the GitHub Actions build check fails in ~25s on PRs while local builds pass вЂ” the workflow lacks proper JDK 17 setup. Fix `.github/workflows` or merge on local green builds.
 
-### Item creation
+## Java pitfalls learned here
 
-Exact Forge TaCZ 1.1.8 signatures were inspected:
+- `NativeImage` is ABGR вЂ” convert ARGB via helper; bake textures once (rebuild ~1500ms), never per-frame pixel work (FPS!).
+- Player arrow rotation: `yaw + 180` points up; use pose translate+mulPose.
+- `GuiGraphics.blit(ResourceLocation, x, y, w, h, u, v, uW, vH, texW, texH)`; `AbstractTexture.setFilter(blur, mipmap)`.
+- HUD renders only after the `HOTBAR` overlay, not on every `RenderGuiOverlayEvent.Post`.
+- Keep key binds off `TAB` (vanilla player list) вЂ” ping is on `G`.
 
-```text
-GunItemBuilder.create()
-    .setId(ResourceLocation)
-    .setAmmoCount(int)
-    .setAmmoInBarrel(boolean)
-    .setFireMode(FireMode)
-    .forceBuild()                 // NO ARGUMENTS
+## Test checklist
 
-AmmoItemBuilder.create()
-    .setId(ResourceLocation)
-    .setCount(int)
-    .build()
-```
+1. `/zw join auto` + `/zw start`; capture a point (`/zw capturedebug` -> `inside=true` вЂ” still unverified after the superflat Y fix).
+2. Die -> PDA opens with icons; click-click / ENTER / DEPLOY respawns; no legacy screen anywhere.
+3. M opens the PDA map alive; icons selectable; markers anchored while panning.
+4. Xaero minimap (top-right circle if so configured) shows point letters + B/T/R waypoints.
+5. TaCZ kits: `/zw validatekits`; killfeed on TaCZ kills (known gap).
 
-The first Forge port incorrectly called `forceBuild(registryLookup)`, causing reflection to fail and `/zw validatekits` to report `gun=false, ammo=true`. The source is corrected to call `forceBuild()` with no arguments. Shop icons use the same builder, so this correction also restores TaCZ gun models in shop menus.
+## Roadmap / open items
 
-### Combat events
-
-Forge TaCZ 1.1.8 event classes are standard Forge EventBus events:
-
-```text
-GunShootEvent
-GunFireEvent
-EntityHurtByGunEvent.Pre
-EntityHurtByGunEvent.Post
-EntityKillByGunEvent
-```
-
-The old Fabric bridge searches for static callback fields and silently does nothing on Forge. Replace it with native `MinecraftForge.EVENT_BUS` listeners. Until then, generic Forge `LivingAttackEvent`, `LivingHurtEvent` and `LivingDeathEvent` provide partial friendly-fire, damage and kill tracking.
-
-## Gun pack
-
-File:
-
-```text
-Stalker-Pack1.0.1-Rework.zip
-```
-
-Install as:
-
-```text
-<instance>/minecraft/tacz/Stalker-Pack1.0.1-Rework.zip
-```
-
-The ZIP is already correctly structured:
-
-```text
-gunpack.meta.json       namespace: stalker
-assets/stalker/
-data/stalker/
-```
-
-Main gun models, textures, displays, data and sounds exist. Known pack issues:
-
-- AK-101, AK-103 and AKS-74 display JSON reference missing LOD model/texture `stalker:gun/lod/ak74m`.
-- AK-102 references missing LOD `stalker:gun/lod/ak105`.
-- Main full-resolution models remain present, so these are secondary distance-rendering defects.
-
-## External content issues
-
-`stalker_decor_mod_1.20.1.jar` and `stalkercubedreborn_1.0.9_fix_forge.jar` contain broken resources independent of ZoneWars:
-
-- unsupported element rotations such as `32.5`, `30`, `-180`;
-- null UV values;
-- missing model files such as `models/custom/bolts.json`, `sign_others.json`, `vss_deco.json`;
-- missing textures;
-- at least one loot table referencing an unknown item.
-
-These errors generate huge logs and black/missing models. Repair the two JAR resource trees separately; do not modify ZoneWars rendering to compensate.
-
-## Performance rules
-
-- Render ZoneWars HUD once per frame, not once per Forge overlay.
-- Full state broadcast is currently every 10 server ticks (2 Hz). Keep it at 2 Hz or reduce it; do not return to 4+ full JSON snapshots per second.
-- Long term: split player positions, hit markers and kill feed into compact/delta packets.
-- Avoid synchronous disk writes on every gameplay action.
-
-## Next priorities
-
-1. Rebuild after the TaCZ `forceBuild()` fix and verify `/zw validatekits` returns all guns and ammo as true.
-2. Verify shop icons show actual TaCZ weapons.
-3. Implement native Forge TaCZ EventBus listeners for shoot/hurt/kill and remove the inactive Fabric callback reflection.
-4. Repair the two friend-mod resource JARs or obtain corrected builds from their authors.
-5. Fix missing STALKER gun-pack LOD resources.
-6. Implement a real server-backed inventory/container for safe drag/drop.
-7. Split the 3,000+ line `ZoneWarsForge.java` into commands, match, economy, squad, clan, respawn, persistence and TaCZ integration services.
-8. Add unit tests for match phases, capture points, economy, respawns, social operations and JSON recovery.
-
-## Build and deployment
-
-```powershell
-$env:JAVA_HOME="C:\Program Files\Microsoft\jdk-17.0.16.8-hotspot"
-$env:Path="$env:JAVA_HOME\bin;$env:Path"
-.\gradlew.bat clean build
-```
-
-Copy `build/libs/zonewars-0.2.0-alpha.jar` into the normal Forge instance `minecraft/mods` folder. Do not put the ZoneWars JAR into ForgeGradle `run/mods` while also loading the source mod, or duplicate mod IDs may occur.
-
-## Runtime mod versions tested
-
-```text
-Minecraft                 1.20.1
-Forge                     47.4.0
-Java                      17.0.16
-TaCZ                       1.1.8-hotfix
-CampChat                   1.0.0
-Curios                     5.14.1+1.20.1
-GeckoLib                   4.8.3
-Xaero's Minimap            26.2.0
-Xaero's World Map          1.42.0
-STALKER Cubed Reborn       1.0.9
-Stalker Decorations        1.0
-```
+- Real server-backed drag/drop tactical inventory container.
+- Native TaCZ Forge EventBus adapter for exact hit/kill stats.
+- Fix GitHub Actions workflow (JDK 17) and clean `*.bak`/`*.ps1` from git history.
+- Optional: prettier respawn icon art via baked textures instead of fill-glyphs.

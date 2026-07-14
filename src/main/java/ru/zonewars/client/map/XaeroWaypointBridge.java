@@ -121,13 +121,11 @@ public final class XaeroWaypointBridge {
             addOwned(set, point.x(), y, point.z(), label, label, pointColor(point));
         }
         for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (!snapshot.team().equals(respawn.team()) || "BASE".equals(respawn.kind())) {
+            if (!snapshot.team().equals(respawn.team())) {
                 continue;
             }
             String title = respawnTitle(respawn.kind());
-            int color = respawn.available()
-                    ? ("TENT".equals(respawn.kind()) ? COLOR_GREEN : COLOR_GOLD)
-                    : COLOR_GRAY;
+            int color = !respawn.available() ? COLOR_GRAY : ("BASE".equals(respawn.kind()) ? ("RED".equals(respawn.team()) ? COLOR_RED : COLOR_BLUE) : ("TENT".equals(respawn.kind()) ? COLOR_GREEN : COLOR_GOLD));
             addOwned(set, respawn.x(), y, respawn.z(), title, title.substring(0, 1), color);
         }
         for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
@@ -158,7 +156,7 @@ public final class XaeroWaypointBridge {
         return switch (kind) {
             case "TENT" -> "Tent";
             case "OUTPOST", "RALLY" -> "Rally";
-            default -> "Spawn";
+            default -> "Base";
         };
     }
 
