@@ -12,8 +12,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.lwjgl.glfw.GLFW;
+import ru.zonewars.client.map.CampChatMapOverlay;
 import ru.zonewars.client.net.ZoneWarsNetworking;
-import ru.zonewars.client.ui.ZoneMapScreen;
 import ru.zonewars.client.ui.ZoneWarsHud;
 import ru.zonewars.forge.ZoneWarsForge;
 
@@ -22,7 +22,7 @@ public final class ZoneWarsClient {
     private static final String CATEGORY = "key.categories.zonewars";
     private static final KeyMapping MAP = key("key.zonewars.map", GLFW.GLFW_KEY_M);
     private static final KeyMapping SQUAD = key("key.zonewars.squad", GLFW.GLFW_KEY_O);
-    private static final KeyMapping PING = key("key.zonewars.ping", GLFW.GLFW_KEY_TAB);
+    private static final KeyMapping PING = key("key.zonewars.ping", GLFW.GLFW_KEY_G);
     private static final KeyMapping INVENTORY = key("key.zonewars.inventory", GLFW.GLFW_KEY_I);
 
     private static KeyMapping key(String name, int code) {
@@ -39,19 +39,25 @@ public final class ZoneWarsClient {
         MinecraftForge.EVENT_BUS.addListener(ZoneWarsClient::clientTick);
         ZoneWarsHud.register();
         ru.zonewars.client.map.XaeroWaypointBridge.register();
+        ru.zonewars.client.map.CampChatMapOverlay.register();
         event.enqueueWork(() -> net.minecraft.client.gui.screens.MenuScreens.register(
-            ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
-            ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
+                ru.zonewars.forge.menu.ZoneWarsMenus.TACTICAL_INVENTORY.get(),
+                ru.zonewars.client.ui.ZoneInventoryContainerScreen::new));
     }
 
     private static void clientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player != null && !minecraft.player.isAlive() && minecraft.screen instanceof DeathScreen) {
-            minecraft.setScreen(new ZoneMapScreen(true));
+        if (minecraft.player != null && minecraft.player.isDeadOrDying()
+                && (minecraft.screen == null || minecraft.screen instanceof DeathScreen)) {
+            // Death flow: respawn selection lives on the campchat PDA map now.
+            CampChatMapOverlay.openDeployment(minecraft);
             ZoneWarsNetworking.requestState();
         }
-        while (MAP.consumeClick()) { minecraft.setScreen(new ZoneMapScreen()); ZoneWarsNetworking.requestState(); }
+        while (MAP.consumeClick()) {
+            CampChatMapOverlay.openPda(minecraft);
+            ZoneWarsNetworking.requestState();
+        }
         while (SQUAD.consumeClick()) ZoneWarsNetworking.openSquadMenu();
         while (PING.consumeClick()) if (minecraft.player != null)
             ZoneWarsNetworking.sendPing("DANGER", minecraft.player.getBlockX(), minecraft.player.getBlockZ());

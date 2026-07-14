@@ -100,7 +100,8 @@ public final class ZoneWarsHud {
 
     private static int drawSquad(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
         int x = 16;
-        int y = 24;
+        // Below Xaero's minimap, which occupies the top-left corner by default.
+        int y = 170;
         int row = 0;
         for (ZoneWarsState.PlayerState player : snapshot.players()) {
             if (!player.squad() && !player.self()) {
@@ -134,67 +135,6 @@ public final class ZoneWarsHud {
             graphics.drawString(client.font, trim(entry.weapon(), 9), 122, y + 4, 0xFFC8D1D8, false);
             graphics.drawString(client.font, trim(entry.victim(), 12), 184, y + 4, teamColor(entry.victimTeam()), false);
             row++;
-        }
-    }
-
-    private static void drawMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
-        int mapSize = 148;
-        int panelWidth = mapSize + 16;
-        int panelHeight = mapSize + 30;
-        int panelX = graphics.guiWidth() - panelWidth - 16;
-        int panelY = 16;
-        int mapX = panelX + 8;
-        int mapY = panelY + 22;
-
-        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, PANEL);
-        graphics.renderOutline(panelX, panelY, panelWidth, panelHeight, STROKE);
-        graphics.drawString(client.font, "MINIMAP", panelX + 8, panelY + 7, MUTED, false);
-        graphics.drawString(client.font, "N", panelX + panelWidth - 14, panelY + 7, TEXT, false);
-        drawMiniMapBase(graphics, snapshot, mapX, mapY, mapSize);
-        graphics.renderOutline(mapX, mapY, mapSize, mapSize, 0xCC9AABB7);
-
-        for (ZoneWarsState.PointState point : snapshot.points()) {
-            int px = miniX(mapX, mapSize, snapshot.bounds(), point.x());
-            int py = miniZ(mapY, mapSize, snapshot.bounds(), point.z());
-            int color = pointColor(point);
-            graphics.fill(px - 6, py - 6, px + 6, py + 6, PANEL);
-            graphics.renderOutline(px - 6, py - 6, 12, 12, color);
-            graphics.drawCenteredString(client.font, pointLabel(point), px, py - 4, TEXT);
-        }
-
-        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            int px = miniX(mapX, mapSize, snapshot.bounds(), respawn.x());
-            int py = miniZ(mapY, mapSize, snapshot.bounds(), respawn.z());
-            int color = respawn.available() ? spawnColor(respawn.kind(), respawn.team()) : 0xFF606B73;
-            graphics.fill(px - 3, py - 3, px + 4, py + 4, 0xFF0B1117);
-            graphics.renderOutline(px - 3, py - 3, 7, 7, color);
-        }
-
-        for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
-            int px = miniX(mapX, mapSize, snapshot.bounds(), marker.x());
-            int py = miniZ(mapY, mapSize, snapshot.bounds(), marker.z());
-            int color = markerColor(marker.type());
-            graphics.fill(px - 5, py - 5, px + 5, py + 5, PANEL);
-            graphics.renderOutline(px - 5, py - 5, 10, 10, color);
-            graphics.drawCenteredString(client.font, markerLabel(marker.type()), px, py - 4, color);
-        }
-
-        ZoneWarsState.PlayerState self = null;
-        for (ZoneWarsState.PlayerState player : snapshot.players()) {
-            int px = miniX(mapX, mapSize, snapshot.bounds(), player.x());
-            int py = miniZ(mapY, mapSize, snapshot.bounds(), player.z());
-            if (player.self()) {
-                self = player;
-                drawPlayerMarker(graphics, px, py, player.yaw(), TEXT, true);
-            } else if (player.squad()) {
-                drawPlayerMarker(graphics, px, py, player.yaw(), GREEN, false);
-            }
-        }
-
-        if (self != null) {
-            String coords = "X " + self.x() + "  Z " + self.z();
-            graphics.fill(mapX + 1, mapY + mapSize - 13, mapX + client.font.width(coords) + 7, mapY + mapSize - 1, 0xB20B1117);
-            graphics.drawString(client.font, coords, mapX + 4, mapY + mapSize - 11, MUTED, false);
         }
     }
 
@@ -232,30 +172,10 @@ public final class ZoneWarsHud {
         graphics.fill(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2), color);
     }
 
-    private static void drawPlayerMarker(GuiGraphics graphics, int x, int y, int yaw, int color, boolean self) {
-        int outline = 0xFF080C10;
-        int size = self ? 4 : 3;
-        graphics.fill(x - size - 1, y - size - 1, x + size + 2, y + size + 2, outline);
-        graphics.fill(x - size, y - size, x + size + 1, y + size + 1, color);
-        int direction = ((normalizeDegrees(yaw) + 22) / 45) % 8;
-        int dx = switch (direction) {
-            case 1, 2, 3 -> -1;
-            case 5, 6, 7 -> 1;
-            default -> 0;
-        };
-        int dy = switch (direction) {
-            case 3, 4, 5 -> -1;
-            case 7, 0, 1 -> 1;
-            default -> 0;
-        };
-        graphics.fill(x - dx - 1, y - dy - 1, x - dx + 2, y - dy + 2, outline);
-        graphics.fill(x - dx, y - dy, x - dx + 1, y - dy + 1, color);
-    }
-
     private static void drawCompass(GuiGraphics graphics, Minecraft client, int center, int yaw) {
         int width = Math.min(440, Math.max(260, graphics.guiWidth() - 620));
         int y = 4;
-        graphics.drawCenteredString(client.font, yaw + "°", center, y, TEXT);
+        graphics.drawCenteredString(client.font, yaw + "\u00B0", center, y, TEXT);
         graphics.fill(center - width / 2, y + 16, center + width / 2, y + 17, 0x668B9BA8);
         graphics.fill(center - 1, y + 11, center + 1, y + 22, TEXT);
         for (int offset = -120; offset <= 120; offset += 15) {
@@ -397,25 +317,29 @@ public final class ZoneWarsHud {
     // ------------------------------------------------------------ round radar
 
     private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+        if (ru.zonewars.client.map.XaeroWaypointBridge.active()) {
+            // Xaero's minimap is installed: let it render the minimap (rotation,
+            // proper terrain, smooth outline). ZoneWars points, respawns and pings
+            // are already mirrored into it as waypoints by XaeroWaypointBridge.
+            return;
+        }
         int radius = 56;
         int cx = graphics.guiWidth() - radius - 16;
-        int cy = radius + 40;
+        int cy = radius + 22;
         double px = client.player.getX();
         double pz = client.player.getZ();
-        double range = 110.0;
+        double range = 40.0;
 
-        // Circular backdrop drawn as horizontal strips.
-        for (int dy = -radius; dy <= radius; dy++) {
-            int half = (int) Math.floor(Math.sqrt((double) radius * radius - (double) dy * dy));
-            graphics.fill(cx - half, cy + dy, cx + half, cy + dy + 1, 0xD20D1410);
+        ensureStaticOverlays(client, radius);
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+        int overlaySize = radius * 2 + 2;
+        if (discLocation != null) {
+            graphics.blit(discLocation, cx - radius - 1, cy - radius - 1, 0.0f, 0.0f, overlaySize, overlaySize, overlaySize, overlaySize);
         }
-        // Inner range ring + crosshair.
-        drawRing(graphics, cx, cy, radius - 21, 0x2ECAD7C2);
-        graphics.fill(cx - radius + 6, cy, cx + radius - 6, cy + 1, 0x1CCAD7C2);
-        graphics.fill(cx, cy - radius + 6, cx + 1, cy + radius - 6, 0x1CCAD7C2);
-        // Rim.
-        drawRing(graphics, cx, cy, radius, 0xFF222B21);
-        drawRing(graphics, cx, cy, radius - 1, 0xFF71835C);
+        drawRadarTerrain(graphics, client, cx, cy, radius, range, px, pz);
+        if (ringLocation != null) {
+            graphics.blit(ringLocation, cx - radius - 1, cy - radius - 1, 0.0f, 0.0f, overlaySize, overlaySize, overlaySize, overlaySize);
+        }
         graphics.drawCenteredString(client.font, "N", cx, cy - radius + 5, TEXT);
 
         for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
@@ -451,8 +375,25 @@ public final class ZoneWarsHud {
             }
         }
 
-        graphics.drawCenteredString(client.font, radarArrow(snapshot.selfYaw()), cx, cy - 4, TEXT);
+        drawSelfArrow(graphics, client, cx, cy);
         graphics.drawCenteredString(client.font, (int) px + " " + (int) pz, cx, cy + radius + 5, MUTED);
+    }
+
+    private static void drawSelfArrow(GuiGraphics graphics, Minecraft client, int cx, int cy) {
+        float yaw = client.player.getYRot() + 180.0f;
+        graphics.pose().pushPose();
+        graphics.pose().translate((float) cx, (float) cy, 0.0f);
+        graphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(yaw));
+        if (arrowLocation != null) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            graphics.blit(arrowLocation, -6, -6, 12, 12, 0.0f, 0.0f, 24, 24, 24, 24);
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+        } else {
+            graphics.fill(-1, -6, 1, -3, TEXT);
+            graphics.fill(-2, -3, 2, 0, TEXT);
+            graphics.fill(-3, 0, 3, 2, TEXT);
+        }
+        graphics.pose().popPose();
     }
 
     private static int[] radarPos(int cx, int cy, int radius, double range, double px, double pz, int x, int z) {
@@ -469,27 +410,289 @@ public final class ZoneWarsHud {
         return new int[] { cx + (int) Math.round(dx * scale), cy + (int) Math.round(dz * scale), clamped };
     }
 
-    private static void drawRing(GuiGraphics graphics, int cx, int cy, int r, int color) {
-        int steps = Math.max(60, r * 7);
-        for (int i = 0; i < steps; i++) {
-            double angle = Math.PI * 2.0 * i / steps;
-            int x = cx + (int) Math.round(Math.cos(angle) * r);
-            int y = cy + (int) Math.round(Math.sin(angle) * r);
-            graphics.fill(x, y, x + 1, y + 1, color);
+    // ------------------------------------------------- baked radar overlays
+
+    private static net.minecraft.client.renderer.texture.DynamicTexture discTexture;
+    private static net.minecraft.resources.ResourceLocation discLocation;
+    private static net.minecraft.client.renderer.texture.DynamicTexture ringTexture;
+    private static net.minecraft.resources.ResourceLocation ringLocation;
+    private static int overlayRadius = -1;
+    private static boolean overlaysBroken;
+    private static net.minecraft.client.renderer.texture.DynamicTexture arrowTexture;
+    private static net.minecraft.resources.ResourceLocation arrowLocation;
+
+    private static void ensureStaticOverlays(Minecraft client, int radius) {
+        if (overlaysBroken || overlayRadius == radius) {
+            return;
+        }
+        try {
+            int size = radius * 2 + 2;
+            int c = radius;
+            if (discTexture == null) {
+                discTexture = new net.minecraft.client.renderer.texture.DynamicTexture(size, size, true);
+                discLocation = client.getTextureManager().register("zonewars_radar_disc", discTexture);
+                ringTexture = new net.minecraft.client.renderer.texture.DynamicTexture(size, size, true);
+                ringLocation = client.getTextureManager().register("zonewars_radar_rings", ringTexture);
+            }
+            com.mojang.blaze3d.platform.NativeImage disc = discTexture.getPixels();
+            com.mojang.blaze3d.platform.NativeImage rings = ringTexture.getPixels();
+            if (disc == null || rings == null) {
+                overlaysBroken = true;
+                return;
+            }
+            int discColor = argbToAbgr(0xFF0D1410);
+            int edgeDark = argbToAbgr(0xFF222B21);
+            int edgeBright = argbToAbgr(0xFF71835C);
+            int innerRing = argbToAbgr(0x2ECAD7C2);
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    double dist = Math.sqrt((double) (x - c) * (x - c) + (double) (y - c) * (y - c));
+                    disc.setPixelRGBA(x, y, withCoverage(discColor, coverageInside(dist, radius + 0.3)));
+                    int ring = withCoverage(edgeDark, coverageRing(dist, radius + 0.3, 0.9));
+                    ring = blendOver(ring, withCoverage(edgeBright, coverageRing(dist, radius - 0.9, 1.0)));
+                    ring = blendOver(ring, withCoverage(innerRing, coverageRing(dist, radius - 21.0, 0.8)));
+                    rings.setPixelRGBA(x, y, ring);
+                }
+            }
+            int cross = argbToAbgr(0x1CCAD7C2);
+            for (int i = -(radius - 6); i <= radius - 6; i++) {
+                if (rings.getPixelRGBA(c + i, c) == 0) {
+                    rings.setPixelRGBA(c + i, c, cross);
+                }
+                if (rings.getPixelRGBA(c, c + i) == 0) {
+                    rings.setPixelRGBA(c, c + i, cross);
+                }
+            }
+            discTexture.upload();
+            ringTexture.upload();
+            buildArrowTexture(client);
+            overlayRadius = radius;
+        } catch (Throwable error) {
+            overlaysBroken = true;
         }
     }
 
-    private static String radarArrow(int yaw) {
-        int normalized = ((yaw % 360) + 360) % 360;
-        if (normalized >= 45 && normalized < 135) {
-            return "<";
+    /** Anti-aliased kite arrow baked once; rotated smoothly by the pose matrix. */
+    private static void buildArrowTexture(Minecraft client) {
+        if (arrowTexture != null) {
+            return;
         }
-        if (normalized >= 135 && normalized < 225) {
-            return "^";
+        int size = 24;
+        arrowTexture = new net.minecraft.client.renderer.texture.DynamicTexture(size, size, true);
+        arrowLocation = client.getTextureManager().register("zonewars_radar_arrow", arrowTexture);
+        com.mojang.blaze3d.platform.NativeImage image = arrowTexture.getPixels();
+        if (image == null) {
+            arrowLocation = null;
+            return;
         }
-        if (normalized >= 225 && normalized < 315) {
-            return ">";
+        double[][] outer = { { 12.0, 1.5 }, { 21.5, 22.5 }, { 12.0, 17.5 }, { 2.5, 22.5 } };
+        double[][] inner = { { 12.0, 4.6 }, { 18.4, 20.4 }, { 12.0, 15.8 }, { 5.6, 20.4 } };
+        int dark = argbToAbgr(0xFF0A0F0C);
+        int bright = argbToAbgr(0xFFF0F5F8);
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                float outerCov = kiteCoverage(x, y, outer);
+                if (outerCov <= 0.0f) {
+                    image.setPixelRGBA(x, y, 0);
+                    continue;
+                }
+                float innerCov = kiteCoverage(x, y, inner);
+                image.setPixelRGBA(x, y, blendOver(withCoverage(dark, outerCov), withCoverage(bright, innerCov)));
+            }
         }
-        return "v";
+        arrowTexture.upload();
+        arrowTexture.setFilter(true, false);
+    }
+
+    private static float kiteCoverage(int px, int py, double[][] kite) {
+        int hits = 0;
+        for (int sy = 0; sy < 4; sy++) {
+            for (int sx = 0; sx < 4; sx++) {
+                double x = px + (sx + 0.5) / 4.0;
+                double y = py + (sy + 0.5) / 4.0;
+                if (inTriangle(x, y, kite[0], kite[1], kite[2]) || inTriangle(x, y, kite[0], kite[2], kite[3])) {
+                    hits++;
+                }
+            }
+        }
+        return hits / 16.0f;
+    }
+
+    private static boolean inTriangle(double x, double y, double[] a, double[] b, double[] c) {
+        double d1 = edgeCross(x, y, a, b);
+        double d2 = edgeCross(x, y, b, c);
+        double d3 = edgeCross(x, y, c, a);
+        boolean hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+        boolean hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+        return !(hasNeg && hasPos);
+    }
+
+    private static double edgeCross(double x, double y, double[] a, double[] b) {
+        return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+    }
+
+    private static float coverageInside(double dist, double r) {
+        return (float) Math.max(0.0, Math.min(1.0, r - dist + 0.5));
+    }
+
+    private static float coverageRing(double dist, double r, double halfWidth) {
+        return (float) Math.max(0.0, Math.min(1.0, halfWidth - Math.abs(dist - r) + 0.5));
+    }
+
+    private static int withCoverage(int abgr, float coverage) {
+        if (coverage <= 0.0f) {
+            return 0;
+        }
+        int a = (int) (((abgr >>> 24) & 0xFF) * Math.min(1.0f, coverage));
+        return (a << 24) | (abgr & 0x00FFFFFF);
+    }
+
+    private static int blendOver(int dst, int src) {
+        int srcA = (src >>> 24) & 0xFF;
+        if (srcA == 0) {
+            return dst;
+        }
+        int dstA = (dst >>> 24) & 0xFF;
+        if (dstA == 0 || srcA == 255) {
+            return src;
+        }
+        float s = srcA / 255.0f;
+        int outA = Math.min(255, srcA + Math.round(dstA * (1.0f - s)));
+        int c1 = Math.round(((src >>> 16) & 0xFF) * s + ((dst >>> 16) & 0xFF) * (1.0f - s));
+        int c2 = Math.round(((src >>> 8) & 0xFF) * s + ((dst >>> 8) & 0xFF) * (1.0f - s));
+        int c3 = Math.round((src & 0xFF) * s + (dst & 0xFF) * (1.0f - s));
+        return (outA << 24) | (c1 << 16) | (c2 << 8) | c3;
+    }
+
+    private static int argbToAbgr(int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+        return (a << 24) | (b << 16) | (g << 8) | r;
+    }
+
+    private static int darkenAbgr(int abgr, float factor) {
+        int a = (abgr >>> 24) & 0xFF;
+        int c1 = (int) (((abgr >>> 16) & 0xFF) * factor);
+        int c2 = (int) (((abgr >>> 8) & 0xFF) * factor);
+        int c3 = (int) ((abgr & 0xFF) * factor);
+        return (a << 24) | (c1 << 16) | (c2 << 8) | c3;
+    }
+
+    // ------------------------------------------------- radar terrain layer
+
+    private static final int TERRAIN_TEX = 160;
+    private static net.minecraft.client.renderer.texture.DynamicTexture terrainTexture;
+    private static net.minecraft.resources.ResourceLocation terrainLocation;
+    private static long terrainBuiltAt;
+    private static double terrainAnchorX;
+    private static double terrainAnchorZ;
+    private static double terrainRange;
+    private static boolean terrainBroken;
+    private static int radarVoidColor;
+
+    private static void drawRadarTerrain(GuiGraphics graphics, Minecraft client, int cx, int cy, int radius, double range, double px, double pz) {
+        if (terrainBroken || client.level == null) {
+            return;
+        }
+        try {
+            long now = System.currentTimeMillis();
+            if (terrainTexture == null || now - terrainBuiltAt > 1500L
+                    || Math.abs(px - terrainAnchorX) > range * 0.25
+                    || Math.abs(pz - terrainAnchorZ) > range * 0.25
+                    || terrainRange != range) {
+                rebuildTerrain(client, px, pz, range);
+            }
+            if (terrainLocation == null) {
+                return;
+            }
+            int r = radius - 2;
+            double pxPerBlock = (radius - 7) / range;
+            double texPerBlock = (TERRAIN_TEX / 2.0) / (range * 1.4);
+            double texPerScreen = texPerBlock / pxPerBlock;
+            float offU = (float) (TERRAIN_TEX / 2.0 + (px - terrainAnchorX) * texPerBlock);
+            float offV = (float) (TERRAIN_TEX / 2.0 + (pz - terrainAnchorZ) * texPerBlock);
+            int step = 3;
+            for (int dy = -r; dy <= r; dy += step) {
+                int rowH = Math.min(step, r + 1 - dy);
+                if (rowH <= 0) {
+                    continue;
+                }
+                int edge = Math.max(Math.abs(dy), Math.abs(dy + rowH - 1));
+                int half = (int) Math.floor(Math.sqrt(Math.max(0.0, (double) r * r - (double) edge * edge)));
+                if (half <= 0) {
+                    continue;
+                }
+                float u = offU + (float) (-half * texPerScreen);
+                float v = offV + (float) (dy * texPerScreen);
+                int uWidth = Math.max(1, (int) Math.round(half * 2 * texPerScreen));
+                int vHeight = Math.max(1, (int) Math.round(rowH * texPerScreen));
+                graphics.blit(terrainLocation, cx - half, cy + dy, half * 2, rowH, u, v, uWidth, vHeight, TERRAIN_TEX, TERRAIN_TEX);
+            }
+        } catch (Throwable error) {
+            terrainBroken = true;
+        }
+    }
+
+    private static void rebuildTerrain(Minecraft client, double px, double pz, double range) {
+        if (terrainTexture == null) {
+            terrainTexture = new net.minecraft.client.renderer.texture.DynamicTexture(TERRAIN_TEX, TERRAIN_TEX, true);
+            terrainLocation = client.getTextureManager().register("zonewars_radar_terrain", terrainTexture);
+            radarVoidColor = argbToAbgr(0xFF0D1410);
+        }
+        com.mojang.blaze3d.platform.NativeImage image = terrainTexture.getPixels();
+        if (image == null) {
+            return;
+        }
+        double texPerBlock = (TERRAIN_TEX / 2.0) / (range * 1.4);
+        net.minecraft.core.BlockPos.MutableBlockPos pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+        int[] lastHeights = new int[TERRAIN_TEX];
+        java.util.Arrays.fill(lastHeights, Integer.MIN_VALUE);
+        for (int ty = 0; ty < TERRAIN_TEX; ty++) {
+            for (int tx = 0; tx < TERRAIN_TEX; tx++) {
+                int wx = (int) Math.floor(px + (tx - TERRAIN_TEX / 2.0) / texPerBlock);
+                int wz = (int) Math.floor(pz + (ty - TERRAIN_TEX / 2.0) / texPerBlock);
+                image.setPixelRGBA(tx, ty, sampleTerrainColor(client.level, pos, wx, wz, lastHeights, tx));
+            }
+        }
+        terrainTexture.upload();
+        terrainAnchorX = px;
+        terrainAnchorZ = pz;
+        terrainRange = range;
+        terrainBuiltAt = System.currentTimeMillis();
+    }
+
+    private static int sampleTerrainColor(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos.MutableBlockPos pos, int x, int z, int[] lastHeights, int tx) {
+        pos.set(x, 0, z);
+        if (!level.hasChunkAt(pos)) {
+            lastHeights[tx] = Integer.MIN_VALUE;
+            return radarVoidColor;
+        }
+        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+        if (y <= level.getMinBuildHeight()) {
+            lastHeights[tx] = Integer.MIN_VALUE;
+            return radarVoidColor;
+        }
+        pos.set(x, y - 1, z);
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+        net.minecraft.world.level.material.MapColor color = state.getMapColor(level, pos);
+        if (color == net.minecraft.world.level.material.MapColor.NONE) {
+            lastHeights[tx] = y;
+            return radarVoidColor;
+        }
+        int north = lastHeights[tx] == Integer.MIN_VALUE
+                ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z - 1)
+                : lastHeights[tx];
+        net.minecraft.world.level.material.MapColor.Brightness brightness;
+        if (y > north) {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.HIGH;
+        } else if (y < north) {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.LOW;
+        } else {
+            brightness = net.minecraft.world.level.material.MapColor.Brightness.NORMAL;
+        }
+        lastHeights[tx] = y;
+        return darkenAbgr(color.calculateRGBColor(brightness), 0.78f);
     }
 }
