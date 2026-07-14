@@ -5,7 +5,6 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.fml.ModList;
 import ru.zonewars.client.state.ZoneWarsState;
-import ru.zonewars.client.ui.ZoneMapScreen;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;

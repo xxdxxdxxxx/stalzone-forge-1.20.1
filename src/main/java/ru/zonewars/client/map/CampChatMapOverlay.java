@@ -27,7 +27,7 @@ DA (ZCraft STALKER PDA) "Map" tab.
  * (respawn) flow inside the PDA: spawn cards, DEPLOY button, hotkeys 1-3
  * and ENTER, plus tactical pings (Shift+LMB waypoint, Ctrl+LMB attack,
  * Ctrl+RMB danger). It can also open the PDA programmatically (M key and
- * on death), falling back to the legacy ZoneMapScreen when campchat is
+ * on death), with respawn icons drawn directly on the map when campchat is
  * missing.
  */
 public final class CampChatMapOverlay {
@@ -60,6 +60,8 @@ public final class CampChatMapOverlay {
     private static final List<int[]> cardRects = new ArrayList<>();
     private static final List<String> cardKinds = new ArrayList<>();
     private static int[] deployRect;
+    private static int deployOpenAttempts;
+    private static long lastLogAt;
     private static boolean transformValid;
     private static double lastCenterX;
     private static double lastCenterY;
@@ -105,17 +107,35 @@ public final class CampChatMapOverlay {
             }
             return true;
         } catch (Throwable t) {
+            logOnce("PDA open failed: " + t);
             return false;
         }
     }
 
-    /** Death flow: open the PDA deployment view (fallback: legacy ZoneMapScreen). */
+    /** Death flow: respawn selection lives on the campchat PDA map now. */
     public static void openDeployment(Minecraft minecraft) {
         if (System.currentTimeMillis() - lastDeployAt < 2500L) {
             return;
         }
-        if (!openPda(minecraft)) {
-            minecraft.setScreen(new ru.zonewars.client.ui.ZoneMapScreen(true));
+        if (minecraft.screen != null && SCREEN_CLASS.equals(minecraft.screen.getClass().getName())) {
+            return;
+        }
+        if (minecraft.player != null && minecraft.player.isAlive()) {
+            deployOpenAttempts = 0;
+        } else if (deployOpenAttempts > 40) {
+            // campchat keeps rejecting the screen: leave the vanilla death screen usable.
+            return;
+        } else {
+            deployOpenAttempts++;
+        }
+        openPda(minecraft);
+    }
+
+    private static void logOnce(String message) {
+        long now = System.currentTimeMillis();
+        if (now - lastLogAt > 5000L) {
+            lastLogAt = now;
+            System.out.println("[ZoneWars] " + message);
         }
     }
 
@@ -220,7 +240,7 @@ public final class CampChatMapOverlay {
                     pointColor(point), initial(displayName(point)));
         }
         for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (!snapshot.team().equals(respawn.team())) {
+            if (snapshot.respawnPrompt() || !snapshot.team().equals(respawn.team())) {
                 continue;
             }
             int color = respawn.available() ? respawnColor(respawn.kind(), respawn.team()) : DISABLED;
@@ -261,55 +281,104 @@ public final class CampChatMapOverlay {
     private static void drawDeploymentPanel(GuiGraphics graphics, Minecraft minecraft,
             ZoneWarsState.Snapshot snapshot, int px, int py, int pw, int ph) {
         Font font = minecraft.font;
-        int width = Math.max(120, Math.min(156, pw / 3));
-        int x2 = px + pw - 8;
-        int x1 = x2 - width;
-        int y = py + 20;
+        long now = System.currentTimeMillis();
 
-        graphics.fill(x1, y, x2, y + 14, 0xE0101613);
-        graphics.drawString(font, "DEPLOYMENT // SELECT", x1 + 5, y + 3, ACCENT, false);
-        y += 18;
-
-        int index = 0;
-        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (!snapshot.team().equals(respawn.team())) {
-                continue;
+        if (transformValid && lastScale > 0.0001) {
+            int index = 0;
+            for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
+                if (!snapshot.team().equals(respawn.team()) || index >= 5) {
+                    continue;
+                }
+                int x = (int) Math.round(lastCenterX + (respawn.x() - lastCameraX) * lastScale);
+                int y = (int) Math.round(lastCenterY + (respawn.z() - lastCameraZ) * lastScale);
+                x = Math.max(px + 16, Math.min(px + pw - 16, x));
+                y = Math.max(py + 30, Math.min(py + ph - 24, y));
+                boolean selected = respawn.kind() != null && respawn.kind().equals(snapshot.selectedRespawn());
+                drawDeployIcon(graphics, font, x, y, respawn, selected, index + 1, now);
+                cardRects.add(new int[] { x - 11, y - 11, x + 11, y + 11 });
+                cardKinds.add(respawn.kind());
+                index++;
             }
-            if (index >= 5) {
-                break;
-            }
-            int bottom = y + 30;
-            boolean selected = respawn.kind() != null && respawn.kind().equals(snapshot.selectedRespawn());
-            int frame = !respawn.available() ? 0xFF39424B : (selected ? ACCENT : 0xFF44544A);
-            graphics.fill(x1, y, x2, bottom, selected ? 0xF013221A : 0xE0101613);
-            graphics.renderOutline(x1, y, width, 30, frame);
-            graphics.drawString(font, (index + 1) + " " + kindTitle(respawn.kind()), x1 + 6, y + 5,
-                    respawn.available() ? (selected ? ACCENT : TEXT) : DISABLED, false);
-            String status;
-            if (!respawn.available()) {
-                status = "NOT DEPLOYED";
-            } else if (respawn.seconds() > 0) {
-                status = "READY IN " + respawn.seconds() + "s";
-            } else {
-                status = selected ? "SELECTED" : "READY";
-            }
-            graphics.drawString(font, status, x1 + 6, y + 17,
-                    respawn.available() ? (selected ? ACCENT : 0xFFADBBB1) : DISABLED, false);
-            cardRects.add(new int[] { x1, y, x2, bottom });
-            cardKinds.add(respawn.kind());
-            y = bottom + 5;
-            index++;
         }
 
-        int bottom = y + 20;
-        graphics.fill(x1, y, x2, bottom, 0xF0173A26);
-        graphics.renderOutline(x1, y, width, 20, ACCENT);
-        graphics.drawCenteredString(font, "DEPLOY [ENTER]", (x1 + x2) / 2, y + 6, ACCENT);
-        deployRect = new int[] { x1, y, x2, bottom };
-        graphics.drawString(font, "1-3 SELECT / CLICK", x1 + 2, bottom + 4, 0xFF7E8B82, false);
+        int barW = Math.max(170, Math.min(230, pw / 3));
+        int x2 = px + pw - 8;
+        int x1 = x2 - barW;
+        int y1 = py + ph - 30;
+        int y2 = py + ph - 8;
+        String kind = snapshot.selectedRespawn();
+        boolean hasSelection = kind != null && !kind.isBlank();
+        graphics.fill(x1, y1, x2, y2, hasSelection ? 0xF0173A26 : 0xE0101613);
+        graphics.renderOutline(x1, y1, barW, y2 - y1, hasSelection ? ACCENT : 0xFF39424B);
+        String label = hasSelection ? "DEPLOY: " + kindTitle(kind) + " [ENTER]" : "SELECT A SPAWN POINT";
+        graphics.drawCenteredString(font, label, (x1 + x2) / 2, y1 + 7, hasSelection ? ACCENT : DISABLED);
+        deployRect = hasSelection ? new int[] { x1, y1, x2, y2 } : null;
+        graphics.drawString(font, "1-3 / CLICK ICON \u00B7 CLICK AGAIN = DEPLOY", x1, y1 - 10, 0xFF7E8B82, false);
+    }
+
+    private static void drawDeployIcon(GuiGraphics graphics, Font font, int x, int y,
+            ZoneWarsState.RespawnState respawn, boolean selected, int hotkey, long now) {
+        int color = selected ? ACCENT
+                : (respawn.available() ? respawnColor(respawn.kind(), respawn.team()) : DISABLED);
+
+        if (selected) {
+            // Expanding ping ring around the chosen deployment point.
+            float phase = (now % 1100L) / 1100.0f;
+            int spread = (int) (phase * 7.0f);
+            int alpha = Math.max(0, Math.min(255, (int) (180 * (1.0f - phase))));
+            graphics.renderOutline(x - 10 - spread, y - 10 - spread, 20 + spread * 2, 20 + spread * 2,
+                    (alpha << 24) | (color & 0xFFFFFF));
+        } else if (respawn.available()) {
+            // Gentle breathing outline for available points.
+            float phase = (now % 1600L) / 1600.0f;
+            int spread = 1 + (int) ((Math.sin(phase * Math.PI * 2.0) + 1.0) * 1.5);
+            graphics.renderOutline(x - 9 - spread, y - 9 - spread, 18 + spread * 2, 18 + spread * 2,
+                    0x50000000 | (color & 0xFFFFFF));
+        }
+
+        graphics.fill(x - 9, y - 9, x + 9, y + 9, 0xF0101613);
+        graphics.renderOutline(x - 9, y - 9, 18, 18, color);
+        drawKindGlyph(graphics, x, y, respawn.kind(), color);
+
+        String status;
+        if (!respawn.available()) {
+            status = "N/A";
+        } else if (respawn.seconds() > 0) {
+            status = respawn.seconds() + "s";
+        } else {
+            status = selected ? "SELECTED" : String.valueOf(hotkey);
+        }
+        graphics.drawCenteredString(font, kindTitle(respawn.kind()), x, y - 21, color);
+        graphics.drawCenteredString(font, status, x, y + 12, selected ? ACCENT : 0xFFADBBB1);
+    }
+
+    private static void drawKindGlyph(GuiGraphics graphics, int x, int y, String kind, int color) {
+        String normalized = kind == null ? "" : kind.toUpperCase(Locale.ROOT);
+        if ("TENT".equals(normalized)) {
+            // Tent: triangle with a door notch.
+            graphics.fill(x - 1, y - 6, x + 1, y - 4, color);
+            graphics.fill(x - 2, y - 4, x + 2, y - 2, color);
+            graphics.fill(x - 3, y - 2, x + 3, y, color);
+            graphics.fill(x - 4, y, x + 4, y + 2, color);
+            graphics.fill(x - 5, y + 2, x + 5, y + 4, color);
+            graphics.fill(x - 1, y + 1, x + 1, y + 4, 0xF0101613);
+        } else if ("OUTPOST".equals(normalized) || "RALLY".equals(normalized)) {
+            // Rally: radio mast with crossbars and a beacon.
+            graphics.fill(x - 1, y - 3, x + 1, y + 5, color);
+            graphics.fill(x - 4, y - 1, x + 4, y, color);
+            graphics.fill(x - 3, y - 3, x + 3, y - 2, color);
+            graphics.fill(x - 2, y - 6, x + 2, y - 4, color);
+        } else {
+            // Base: flag on a pole.
+            graphics.fill(x - 3, y - 6, x - 1, y + 5, color);
+            graphics.fill(x - 1, y - 6, x + 5, y - 4, color);
+            graphics.fill(x - 1, y - 4, x + 3, y - 2, color);
+        }
     }
 
     private static void deployNow(Minecraft minecraft) {
+        deployOpenAttempts = 0;
+        XaeroWaypointBridge.markDeploying();
         ZoneWarsNetworking.confirmRespawn();
         if (minecraft.player != null && minecraft.player.isDeadOrDying()) {
             // The real respawn: vanilla packet -> server PlayerRespawnEvent ->
@@ -338,7 +407,12 @@ public final class CampChatMapOverlay {
             if (respawnUiActive && button == 0) {
                 for (int i = 0; i < cardRects.size(); i++) {
                     if (within(cardRects.get(i), mx, my)) {
-                        ZoneWarsNetworking.chooseRespawn(cardKinds.get(i));
+                        String kind = cardKinds.get(i);
+                        if (kind != null && kind.equals(ZoneWarsState.snapshot().selectedRespawn())) {
+                            deployNow(minecraft);
+                        } else {
+                            ZoneWarsNetworking.chooseRespawn(kind);
+                        }
                         event.setCanceled(true);
                         return;
                     }
@@ -418,6 +492,12 @@ public final class CampChatMapOverlay {
         double scale = Math.min(scaleX, scaleZ);
         double centerWorldX = (bounds.minX() + bounds.maxX()) / 2.0;
         double centerWorldZ = (bounds.minZ() + bounds.maxZ()) / 2.0;
+        lastCenterX = px + pw / 2.0;
+        lastCenterY = py + ph / 2.0;
+        lastCameraX = centerWorldX;
+        lastCameraZ = centerWorldZ;
+        lastScale = scale;
+        transformValid = true;
         drawMarkers(graphics, minecraft, snapshot,
                 new WorldTransform(px + pw / 2.0, py + ph / 2.0, centerWorldX, centerWorldZ, scale));
     }

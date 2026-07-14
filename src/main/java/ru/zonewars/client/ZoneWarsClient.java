@@ -14,7 +14,6 @@ import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.lwjgl.glfw.GLFW;
 import ru.zonewars.client.map.CampChatMapOverlay;
 import ru.zonewars.client.net.ZoneWarsNetworking;
-import ru.zonewars.client.ui.ZoneMapScreen;
 import ru.zonewars.client.ui.ZoneWarsHud;
 import ru.zonewars.forge.ZoneWarsForge;
 
@@ -49,15 +48,14 @@ public final class ZoneWarsClient {
     private static void clientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player != null && !minecraft.player.isAlive() && minecraft.screen instanceof DeathScreen) {
-            // Death flow lives inside the campchat PDA deployment view now.
+        if (minecraft.player != null && minecraft.player.isDeadOrDying()
+                && (minecraft.screen == null || minecraft.screen instanceof DeathScreen)) {
+            // Death flow: respawn selection lives on the campchat PDA map now.
             CampChatMapOverlay.openDeployment(minecraft);
             ZoneWarsNetworking.requestState();
         }
         while (MAP.consumeClick()) {
-            if (!CampChatMapOverlay.openPda(minecraft)) {
-                minecraft.setScreen(new ZoneMapScreen());
-            }
+            CampChatMapOverlay.openPda(minecraft);
             ZoneWarsNetworking.requestState();
         }
         while (SQUAD.consumeClick()) ZoneWarsNetworking.openSquadMenu();

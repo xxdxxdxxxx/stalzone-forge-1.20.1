@@ -318,12 +318,13 @@ public final class ZoneWarsHud {
     private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
         int radius = 56;
         int cx = graphics.guiWidth() - radius - 16;
-        int cy = radius + 40;
+        int cy = radius + 22;
         double px = client.player.getX();
         double pz = client.player.getZ();
-        double range = 60.0;
+        double range = 40.0;
 
         ensureStaticOverlays(client, radius);
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
         int overlaySize = radius * 2 + 2;
         if (discLocation != null) {
             graphics.blit(discLocation, cx - radius - 1, cy - radius - 1, 0.0f, 0.0f, overlaySize, overlaySize, overlaySize, overlaySize);
@@ -376,13 +377,15 @@ public final class ZoneWarsHud {
         graphics.pose().pushPose();
         graphics.pose().translate((float) cx, (float) cy, 0.0f);
         graphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(yaw));
-        graphics.fill(-2, -7, 2, -3, 0xE6080C10);
-        graphics.fill(-3, -4, 3, 1, 0xE6080C10);
-        graphics.fill(-4, 1, 4, 3, 0xE6080C10);
-        graphics.fill(-1, -6, 1, -3, TEXT);
-        graphics.fill(-2, -3, 2, 0, TEXT);
-        graphics.fill(-3, 0, 3, 2, TEXT);
-        graphics.fill(-1, 0, 1, 2, 0xFF141A14);
+        if (arrowLocation != null) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            graphics.blit(arrowLocation, -6, -6, 12, 12, 0.0f, 0.0f, 24, 24, 24, 24);
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+        } else {
+            graphics.fill(-1, -6, 1, -3, TEXT);
+            graphics.fill(-2, -3, 2, 0, TEXT);
+            graphics.fill(-3, 0, 3, 2, TEXT);
+        }
         graphics.pose().popPose();
     }
 
@@ -408,6 +411,8 @@ public final class ZoneWarsHud {
     private static net.minecraft.resources.ResourceLocation ringLocation;
     private static int overlayRadius = -1;
     private static boolean overlaysBroken;
+    private static net.minecraft.client.renderer.texture.DynamicTexture arrowTexture;
+    private static net.minecraft.resources.ResourceLocation arrowLocation;
 
     private static void ensureStaticOverlays(Minecraft client, int radius) {
         if (overlaysBroken || overlayRadius == radius) {
@@ -429,39 +434,127 @@ public final class ZoneWarsHud {
                 return;
             }
             int discColor = argbToAbgr(0xFF0D1410);
+            int edgeDark = argbToAbgr(0xFF222B21);
+            int edgeBright = argbToAbgr(0xFF71835C);
+            int innerRing = argbToAbgr(0x2ECAD7C2);
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
                     double dist = Math.sqrt((double) (x - c) * (x - c) + (double) (y - c) * (y - c));
-                    disc.setPixelRGBA(x, y, dist <= radius + 0.2 ? discColor : 0);
-                    rings.setPixelRGBA(x, y, 0);
+                    disc.setPixelRGBA(x, y, withCoverage(discColor, coverageInside(dist, radius + 0.3)));
+                    int ring = withCoverage(edgeDark, coverageRing(dist, radius + 0.3, 0.9));
+                    ring = blendOver(ring, withCoverage(edgeBright, coverageRing(dist, radius - 0.9, 1.0)));
+                    ring = blendOver(ring, withCoverage(innerRing, coverageRing(dist, radius - 21.0, 0.8)));
+                    rings.setPixelRGBA(x, y, ring);
                 }
             }
-            plotCircle(rings, c, radius, argbToAbgr(0xFF222B21));
-            plotCircle(rings, c, radius - 1, argbToAbgr(0xFF71835C));
-            plotCircle(rings, c, radius - 21, argbToAbgr(0x2ECAD7C2));
             int cross = argbToAbgr(0x1CCAD7C2);
             for (int i = -(radius - 6); i <= radius - 6; i++) {
-                rings.setPixelRGBA(c + i, c, cross);
-                rings.setPixelRGBA(c, c + i, cross);
+                if (rings.getPixelRGBA(c + i, c) == 0) {
+                    rings.setPixelRGBA(c + i, c, cross);
+                }
+                if (rings.getPixelRGBA(c, c + i) == 0) {
+                    rings.setPixelRGBA(c, c + i, cross);
+                }
             }
             discTexture.upload();
             ringTexture.upload();
+            buildArrowTexture(client);
             overlayRadius = radius;
         } catch (Throwable error) {
             overlaysBroken = true;
         }
     }
 
-    private static void plotCircle(com.mojang.blaze3d.platform.NativeImage image, int c, int r, int abgr) {
-        int steps = Math.max(64, r * 10);
-        for (int i = 0; i < steps; i++) {
-            double angle = Math.PI * 2.0 * i / steps;
-            int x = c + (int) Math.round(Math.cos(angle) * r);
-            int y = c + (int) Math.round(Math.sin(angle) * r);
-            if (x >= 0 && y >= 0 && x < image.getWidth() && y < image.getHeight()) {
-                image.setPixelRGBA(x, y, abgr);
+    /** Anti-aliased kite arrow baked once; rotated smoothly by the pose matrix. */
+    private static void buildArrowTexture(Minecraft client) {
+        if (arrowTexture != null) {
+            return;
+        }
+        int size = 24;
+        arrowTexture = new net.minecraft.client.renderer.texture.DynamicTexture(size, size, true);
+        arrowLocation = client.getTextureManager().register("zonewars_radar_arrow", arrowTexture);
+        com.mojang.blaze3d.platform.NativeImage image = arrowTexture.getPixels();
+        if (image == null) {
+            arrowLocation = null;
+            return;
+        }
+        double[][] outer = { { 12.0, 1.5 }, { 21.5, 22.5 }, { 12.0, 17.5 }, { 2.5, 22.5 } };
+        double[][] inner = { { 12.0, 4.6 }, { 18.4, 20.4 }, { 12.0, 15.8 }, { 5.6, 20.4 } };
+        int dark = argbToAbgr(0xFF0A0F0C);
+        int bright = argbToAbgr(0xFFF0F5F8);
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                float outerCov = kiteCoverage(x, y, outer);
+                if (outerCov <= 0.0f) {
+                    image.setPixelRGBA(x, y, 0);
+                    continue;
+                }
+                float innerCov = kiteCoverage(x, y, inner);
+                image.setPixelRGBA(x, y, blendOver(withCoverage(dark, outerCov), withCoverage(bright, innerCov)));
             }
         }
+        arrowTexture.upload();
+        arrowTexture.setFilter(true, false);
+    }
+
+    private static float kiteCoverage(int px, int py, double[][] kite) {
+        int hits = 0;
+        for (int sy = 0; sy < 4; sy++) {
+            for (int sx = 0; sx < 4; sx++) {
+                double x = px + (sx + 0.5) / 4.0;
+                double y = py + (sy + 0.5) / 4.0;
+                if (inTriangle(x, y, kite[0], kite[1], kite[2]) || inTriangle(x, y, kite[0], kite[2], kite[3])) {
+                    hits++;
+                }
+            }
+        }
+        return hits / 16.0f;
+    }
+
+    private static boolean inTriangle(double x, double y, double[] a, double[] b, double[] c) {
+        double d1 = edgeCross(x, y, a, b);
+        double d2 = edgeCross(x, y, b, c);
+        double d3 = edgeCross(x, y, c, a);
+        boolean hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+        boolean hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+        return !(hasNeg && hasPos);
+    }
+
+    private static double edgeCross(double x, double y, double[] a, double[] b) {
+        return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+    }
+
+    private static float coverageInside(double dist, double r) {
+        return (float) Math.max(0.0, Math.min(1.0, r - dist + 0.5));
+    }
+
+    private static float coverageRing(double dist, double r, double halfWidth) {
+        return (float) Math.max(0.0, Math.min(1.0, halfWidth - Math.abs(dist - r) + 0.5));
+    }
+
+    private static int withCoverage(int abgr, float coverage) {
+        if (coverage <= 0.0f) {
+            return 0;
+        }
+        int a = (int) (((abgr >>> 24) & 0xFF) * Math.min(1.0f, coverage));
+        return (a << 24) | (abgr & 0x00FFFFFF);
+    }
+
+    private static int blendOver(int dst, int src) {
+        int srcA = (src >>> 24) & 0xFF;
+        if (srcA == 0) {
+            return dst;
+        }
+        int dstA = (dst >>> 24) & 0xFF;
+        if (dstA == 0 || srcA == 255) {
+            return src;
+        }
+        float s = srcA / 255.0f;
+        int outA = Math.min(255, srcA + Math.round(dstA * (1.0f - s)));
+        int c1 = Math.round(((src >>> 16) & 0xFF) * s + ((dst >>> 16) & 0xFF) * (1.0f - s));
+        int c2 = Math.round(((src >>> 8) & 0xFF) * s + ((dst >>> 8) & 0xFF) * (1.0f - s));
+        int c3 = Math.round((src & 0xFF) * s + (dst & 0xFF) * (1.0f - s));
+        return (outA << 24) | (c1 << 16) | (c2 << 8) | c3;
     }
 
     private static int argbToAbgr(int argb) {
