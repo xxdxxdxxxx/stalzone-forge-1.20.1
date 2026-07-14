@@ -11,3 +11,5 @@ out/
 world/
 logs/
 crash-reports/
+*.bak
+*.ps1
