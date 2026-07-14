@@ -237,10 +237,6 @@ public final class CampChatMapOverlay {
             drawChip(graphics, font, transform.x(point.x()), transform.y(point.z()),
                     pointColor(point), initial(displayName(point)));
         }
-        for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
-            drawChip(graphics, font, transform.x(marker.x()), transform.y(marker.z()),
-                    markerColor(marker.type()), markerLabel(marker.type()));
-        }
         for (ZoneWarsState.PlayerState player : snapshot.players()) {
             if (player.self()) {
                 continue;
@@ -249,20 +245,6 @@ public final class CampChatMapOverlay {
             int y = transform.y(player.z());
             graphics.fill(x - 2, y - 2, x + 2, y + 2, 0xFF101614);
             graphics.fill(x - 1, y - 1, x + 1, y + 1, GREEN);
-        }
-        if (minecraft.player != null) {
-            int x = transform.x(minecraft.player.getX());
-            int y = transform.y(minecraft.player.getZ());
-            graphics.pose().pushPose();
-            graphics.pose().translate((float) x, (float) y, 0.0f);
-            graphics.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(minecraft.player.getYRot() + 180.0f));
-            graphics.fill(-2, -6, 2, -2, 0xF0101614);
-            graphics.fill(-3, -3, 3, 1, 0xF0101614);
-            graphics.fill(-4, 1, 4, 3, 0xF0101614);
-            graphics.fill(-1, -5, 1, -2, 0xFFFFFFFF);
-            graphics.fill(-2, -2, 2, 1, 0xFFFFFFFF);
-            graphics.fill(-3, 1, 3, 2, 0xFFFFFFFF);
-            graphics.pose().popPose();
         }
     }
 

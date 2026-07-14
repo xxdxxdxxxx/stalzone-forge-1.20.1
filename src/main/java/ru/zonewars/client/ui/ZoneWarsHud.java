@@ -100,7 +100,8 @@ public final class ZoneWarsHud {
 
     private static int drawSquad(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
         int x = 16;
-        int y = 24;
+        // Below Xaero's minimap, which occupies the top-left corner by default.
+        int y = 170;
         int row = 0;
         for (ZoneWarsState.PlayerState player : snapshot.players()) {
             if (!player.squad() && !player.self()) {

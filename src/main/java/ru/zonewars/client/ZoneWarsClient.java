@@ -22,7 +22,7 @@ public final class ZoneWarsClient {
     private static final String CATEGORY = "key.categories.zonewars";
     private static final KeyMapping MAP = key("key.zonewars.map", GLFW.GLFW_KEY_M);
     private static final KeyMapping SQUAD = key("key.zonewars.squad", GLFW.GLFW_KEY_O);
-    private static final KeyMapping PING = key("key.zonewars.ping", GLFW.GLFW_KEY_TAB);
+    private static final KeyMapping PING = key("key.zonewars.ping", GLFW.GLFW_KEY_G);
     private static final KeyMapping INVENTORY = key("key.zonewars.inventory", GLFW.GLFW_KEY_I);
 
     private static KeyMapping key(String name, int code) {
