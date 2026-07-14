@@ -316,6 +316,12 @@ public final class ZoneWarsHud {
     // ------------------------------------------------------------ round radar
 
     private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+        if (ru.zonewars.client.map.XaeroWaypointBridge.active()) {
+            // Xaero's minimap is installed: let it render the minimap (rotation,
+            // proper terrain, smooth outline). ZoneWars points, respawns and pings
+            // are already mirrored into it as waypoints by XaeroWaypointBridge.
+            return;
+        }
         int radius = 56;
         int cx = graphics.guiWidth() - radius - 16;
         int cy = radius + 22;

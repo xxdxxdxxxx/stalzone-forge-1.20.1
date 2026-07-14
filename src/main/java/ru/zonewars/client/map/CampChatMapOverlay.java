@@ -226,10 +226,8 @@ public final class CampChatMapOverlay {
             graphics.disableScissor();
         }
         drawHeader(graphics, minecraft, snapshot, px, py, anchored);
-        if (snapshot.respawnPrompt()) {
-            drawDeploymentPanel(graphics, minecraft, snapshot, px, py, pw, ph);
-            respawnUiActive = true;
-        }
+        drawDeploymentPanel(graphics, minecraft, snapshot, px, py, pw, ph);
+        respawnUiActive = true;
     }
 
     private static void drawMarkers(GuiGraphics graphics, Minecraft minecraft,
@@ -238,14 +236,6 @@ public final class CampChatMapOverlay {
         for (ZoneWarsState.PointState point : snapshot.points()) {
             drawChip(graphics, font, transform.x(point.x()), transform.y(point.z()),
                     pointColor(point), initial(displayName(point)));
-        }
-        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (snapshot.respawnPrompt() || !snapshot.team().equals(respawn.team())) {
-                continue;
-            }
-            int color = respawn.available() ? respawnColor(respawn.kind(), respawn.team()) : DISABLED;
-            drawChip(graphics, font, transform.x(respawn.x()), transform.y(respawn.z()),
-                    color, initial(kindLabel(respawn.kind())));
         }
         for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
             drawChip(graphics, font, transform.x(marker.x()), transform.y(marker.z()),
@@ -299,6 +289,11 @@ public final class CampChatMapOverlay {
                 cardKinds.add(respawn.kind());
                 index++;
             }
+        }
+
+        if (!snapshot.respawnPrompt()) {
+            deployRect = null;
+            return;
         }
 
         int barW = Math.max(170, Math.min(230, pw / 3));
@@ -408,7 +403,8 @@ public final class CampChatMapOverlay {
                 for (int i = 0; i < cardRects.size(); i++) {
                     if (within(cardRects.get(i), mx, my)) {
                         String kind = cardKinds.get(i);
-                        if (kind != null && kind.equals(ZoneWarsState.snapshot().selectedRespawn())) {
+                        ZoneWarsState.Snapshot snap = ZoneWarsState.snapshot();
+                        if (kind != null && kind.equals(snap.selectedRespawn()) && snap.respawnPrompt()) {
                             deployNow(minecraft);
                         } else {
                             ZoneWarsNetworking.chooseRespawn(kind);
@@ -453,7 +449,7 @@ public final class CampChatMapOverlay {
             return;
         }
         int key = event.getKeyCode();
-        if (key == 257 || key == 335) { // ENTER / KP_ENTER
+        if ((key == 257 || key == 335) && ZoneWarsState.snapshot().respawnPrompt()) { // ENTER / KP_ENTER
             deployNow(Minecraft.getInstance());
             event.setCanceled(true);
             return;
