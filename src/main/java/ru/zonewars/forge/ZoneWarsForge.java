@@ -240,8 +240,11 @@ public final class ZoneWarsForge {
             return;
         }
         if (action.toLowerCase(Locale.ROOT).startsWith("respawn:")) {
-            respawns.select(player.getUUID(), RespawnKind.parse(action.substring("respawn:".length())));
-            clientBridge.sendState(player);
+            Optional<RespawnKind> kind = RespawnKind.parse(action.substring("respawn:".length()));
+            if (kind.isPresent()) {
+                respawns.select(player.getUUID(), kind.get());
+                clientBridge.sendState(player);
+            }
             return;
         }
         if (action.toLowerCase(Locale.ROOT).startsWith("ping:")) {
@@ -262,8 +265,16 @@ public final class ZoneWarsForge {
         Map<UUID, Long> limits = stateRequest ? stateRequestCooldowns : actionCooldowns;
         long allowedAt = limits.getOrDefault(id, 0L);
         if (now < allowedAt) return false;
-        limits.put(id, now + (stateRequest ? 2_000L : 250L));
+        limits.put(id, now + actionCooldownMillis(action, stateRequest));
         return true;
+    }
+
+    private long actionCooldownMillis(String action, boolean stateRequest) {
+        if (stateRequest) return 2_000L;
+        String lower = action.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("ping:") || lower.startsWith("waypoint:")) return 500L;
+        if (lower.startsWith("buy:")) return 250L;
+        return 100L;
     }
 
     private boolean allowDamage(LivingEntity entity, DamageSource source, float amount) {
@@ -1472,21 +1483,24 @@ public final class ZoneWarsForge {
         }
 
         private boolean respawn(ServerPlayer player) {
-            if (!matches.isParticipant(player.getUUID()) || !awaitingRespawn.remove(player.getUUID())) {
+            UUID playerId = player.getUUID();
+            if (!matches.isParticipant(playerId) || !awaitingRespawn.contains(playerId)) {
                 return false;
             }
             RespawnPoint point = resolve(player).orElse(null);
             if (point == null) {
+                awaitingRespawn.remove(playerId);
                 matches.teleportToBase(player);
                 return true;
             }
             long now = System.currentTimeMillis();
             if (point.availableAt() > now) {
-                matches.teleportToBase(player);
-                return true;
+                tell(player, point.name() + " is available in " + secondsUntil(point) + "s. Select base or wait.");
+                return false;
             }
+            awaitingRespawn.remove(playerId);
             matches.teleport(player, point.location());
-            cooldownUntil.put(player.getUUID(), now + (point.kind() == RespawnKind.TENT ? 10_000L : 50_000L));
+            cooldownUntil.put(playerId, now + (point.kind() == RespawnKind.TENT ? 10_000L : 50_000L));
             return true;
         }
 

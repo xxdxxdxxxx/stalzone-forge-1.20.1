@@ -5,12 +5,12 @@ enum RespawnKind {
     TENT,
     OUTPOST;
 
-    static RespawnKind parse(String value) {
+    static java.util.Optional<RespawnKind> parse(String value) {
         for (RespawnKind kind : values()) {
             if (kind.name().equalsIgnoreCase(value)) {
-                return kind;
+                return java.util.Optional.of(kind);
             }
         }
-        return BASE;
+        return java.util.Optional.empty();
     }
 }

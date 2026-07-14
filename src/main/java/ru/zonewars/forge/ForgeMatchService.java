@@ -224,14 +224,29 @@ final class ForgeMatchService {
         }
 
         private void tickIncome() {
+            MinecraftServer server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
             for (CapturePoint point : points) {
                 if (point.status() != CapturePointStatus.OWNED) {
                     continue;
                 }
                 point.owner().ifPresent(owner -> {
                     scores.merge(owner, arena.pointsPerSecond(), Integer::sum);
+                    if (server == null) {
+                        return;
+                    }
+                    LocationSpec location = point.data().location();
+                    double radiusSquared = point.data().radius() * point.data().radius();
                     for (Map.Entry<UUID, TeamColor> entry : teams.entrySet()) {
-                        if (entry.getValue() == owner) {
+                        if (entry.getValue() != owner) {
+                            continue;
+                        }
+                        ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+                        if (player == null || !CapturePoint.worldMatches(player.serverLevel(), location.world())) {
+                            continue;
+                        }
+                        double dx = player.getX() - location.x();
+                        double dz = player.getZ() - location.z();
+                        if (dx * dx + dz * dz <= radiusSquared) {
                             economy.add(entry.getKey(), economy.captureIncomePerSecond());
                         }
                     }
