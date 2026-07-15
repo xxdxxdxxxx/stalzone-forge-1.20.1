@@ -1,31 +1,46 @@
 name: Build
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
       - name: Download Xaero compile dependency
-   run: |
-     mkdir -p local-mods
-     curl --fail --location --retry 3 --retry-delay 2 \
-       https://cdn.modrinth.com/data/1bokaNcj/versions/8s5PDDTU/xaerominimap-forge-1.20.1-26.3.0.jar \
-       --output local-mods/xaerominimap-dev-26.3.0.jar
-     echo "b0e02a88cb7c863085a684e45500dd1a5bd126c7  local-mods/xaerominimap-dev-26.3.0.jar" | sha1sum --check
- - run: chmod +x gradlew
-      - run: ./gradlew clean build --stacktrace
-      - uses: actions/upload-artifact@v4
+        shell: bash
+        run: |
+          mkdir -p local-mods
+          curl --fail --location --retry 3 --retry-delay 2 \
+            'https://cdn.modrinth.com/data/1bokaNcj/versions/8s5PDDTU/xaerominimap-forge-1.20.1-26.3.0.jar' \
+            --output local-mods/xaerominimap-dev-26.3.0.jar
+          echo 'b0e02a88cb7c863085a684e45500dd1a5bd126c7  local-mods/xaerominimap-dev-26.3.0.jar' | sha1sum --check
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build
+        run: ./gradlew clean build --stacktrace
+
+      - name: Upload ZoneWars JAR
         if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: zonewars-jar
           path: build/libs/*.jar
