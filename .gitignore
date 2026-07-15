@@ -13,3 +13,5 @@ logs/
 crash-reports/
 *.bak
 *.ps1
+
+local-mods/xaerominimap-dev-26.3.0.jar

@@ -1186,9 +1186,9 @@ public final class ZoneWarsForge {
             }
         }
 
-        private void removePlayer(ServerPlayer player) {
-            markers.removeIf(marker -> marker.label().equals(player.getName().getString()));
-        }
+          private void removePlayer(ServerPlayer player) {
+ markers.removeIf(marker -> marker.label().equals(player.getName().getString()));
+ }
 
         private void addWaypoint(ServerPlayer player, String payload) {
             String[] parts = payload.split(":");
@@ -1361,39 +1361,31 @@ public final class ZoneWarsForge {
             this.squads = squads;
         }
 
-        private Optional<String> placeTent(ServerPlayer player) {
-            Optional<TeamColor> team = matches.teamOf(player.getUUID());
-            if (team.isEmpty()) {
-                return Optional.of("Join a team first.");
-            }
-            Optional<String> issue = placementIssue(player);
-            if (issue.isPresent()) {
-                return issue;
-            }
-            BlockPos blockPos = player.blockPosition().relative(player.getDirection());
-            if (!player.serverLevel().getBlockState(blockPos).isAir()) {
-                return Optional.of("Need empty space in front of you.");
-            }
-            RespawnPoint previous = tentsByPlayer.get(player.getUUID());
-            if (previous != null) {
-                removeBlock(player.server, previous);
-            }
-            player.serverLevel().setBlock(blockPos, Blocks.CAMPFIRE.defaultBlockState(), 3);
-            spawnModel(player.server, player.serverLevel(), blockPos, 9102, 1.7f);
-            RespawnPoint point = new RespawnPoint(
-                RespawnKind.TENT,
-                team.get(),
-                player.getName().getString() + "'s Tent",
-                LocationSpec.fromBlock(player, blockPos.above()),
-                LocationSpec.fromBlock(player, blockPos),
-                150,
-                150,
-                System.currentTimeMillis() + 10_000L
-            );
-            tentsByPlayer.put(player.getUUID(), point);
-            selected.put(player.getUUID(), RespawnKind.TENT);
-            return Optional.empty();
-        }
+         private Optional<String> placeTent(ServerPlayer player) {
+ Optional<TeamColor> team = matches.teamOf(player.getUUID());
+ if (team.isEmpty()) return Optional.of("Join a team first.");
+ Optional<String> issue = placementIssue(player);
+ if (issue.isPresent()) return issue;
+ BlockPos blockPos = player.blockPosition().relative(player.getDirection());
+ if (!player.serverLevel().getBlockState(blockPos).isAir()) return Optional.of("Need empty space in front of you.");
+
+ // One shared field tent per team. Placing a new one relocates the old one.
+ Map.Entry<UUID, RespawnPoint> previous = tentsByPlayer.entrySet().stream()
+ .filter(entry -> entry.getValue().team() == team.get()).findFirst().orElse(null);
+ if (previous != null) {
+ removeBlock(player.server, previous.getValue());
+ tentsByPlayer.remove(previous.getKey());
+ }
+ player.serverLevel().setBlock(blockPos, Blocks.CAMPFIRE.defaultBlockState(), 3);
+ spawnModel(player.server, player.serverLevel(), blockPos, 9102, 1.7f);
+ RespawnPoint point = new RespawnPoint(
+ RespawnKind.TENT, team.get(), team.get().name() + " Field Tent",
+ LocationSpec.fromBlock(player, blockPos.above()), LocationSpec.fromBlock(player, blockPos),
+ 150, 150, System.currentTimeMillis() + 10_000L);
+ tentsByPlayer.put(player.getUUID(), point);
+ selected.put(player.getUUID(), RespawnKind.TENT);
+ return Optional.empty();
+ }
 
         private Optional<String> placeOutpost(ServerPlayer player) {
             Optional<TeamColor> team = matches.teamOf(player.getUUID());
@@ -1464,15 +1456,12 @@ public final class ZoneWarsForge {
             return awaitingRespawn.contains(playerId);
         }
 
-        private void removePlayer(MinecraftServer server, UUID playerId) {
-            RespawnPoint tent = tentsByPlayer.remove(playerId);
-            if (tent != null) {
-                removeBlock(server, tent);
-            }
-            selected.remove(playerId);
-            cooldownUntil.remove(playerId);
-            awaitingRespawn.remove(playerId);
-        }
+         private void removePlayer(MinecraftServer server, UUID playerId) {
+ // The field tent is team-owned, so it remains when its placer disconnects.
+ selected.remove(playerId);
+ cooldownUntil.remove(playerId);
+ awaitingRespawn.remove(playerId);
+ }
 
         private void select(UUID playerId, RespawnKind kind) {
             selected.put(playerId, kind);
@@ -1516,43 +1505,38 @@ public final class ZoneWarsForge {
             return pointFor(player, kind);
         }
 
-        private Optional<RespawnPoint> pointFor(ServerPlayer player, RespawnKind kind) {
-            Optional<TeamColor> team = matches.teamOf(player.getUUID());
-            if (team.isEmpty() || kind == RespawnKind.BASE) {
-                return Optional.empty();
-            }
-            if (kind == RespawnKind.TENT) {
-                RespawnPoint point = tentsByPlayer.get(player.getUUID());
-                return point != null && point.team() == team.get() ? Optional.of(point) : Optional.empty();
-            }
-            Optional<Squad> squad = squads.squadOf(player.getUUID());
-            if (squad.isEmpty()) {
-                return Optional.empty();
-            }
-            RespawnPoint point = outpostsBySquad.get(squad.get().id());
-            return point != null && point.team() == team.get() ? Optional.of(point) : Optional.empty();
-        }
+         private Optional<RespawnPoint> pointFor(ServerPlayer player, RespawnKind kind) {
+ Optional<TeamColor> team = matches.teamOf(player.getUUID());
+ if (team.isEmpty() || kind == RespawnKind.BASE) return Optional.empty();
+ if (kind == RespawnKind.TENT) {
+ // All teammates resolve to the same team tent; enemy tents never resolve.
+ return tentsByPlayer.values().stream().filter(point -> point.team() == team.get()).findFirst();
+ }
+ Optional<Squad> squad = squads.squadOf(player.getUUID());
+ if (squad.isEmpty()) return Optional.empty();
+ RespawnPoint point = outpostsBySquad.get(squad.get().id());
+ return point != null && point.team() == team.get() ? Optional.of(point) : Optional.empty();
+ }
 
-        private JsonArray jsonFor(ServerPlayer viewer) {
-            JsonArray rows = new JsonArray();
-            Optional<TeamColor> team = matches.teamOf(viewer.getUUID());
-            ArenaData arena = matches.arena();
-            TeamColor ownTeam = team.orElse(TeamColor.RED);
-            rows.add(json(new RespawnPoint(RespawnKind.BASE, ownTeam, "Base", ownTeam == TeamColor.RED ? arena.redSpawn() : arena.blueSpawn(), ownTeam == TeamColor.RED ? arena.redSpawn() : arena.blueSpawn(), 0, 0, 0), true, 0));
-            if (team.isEmpty()) {
-                return rows;
-            }
-            RespawnPoint tent = tentsByPlayer.get(viewer.getUUID());
-            if (tent != null && tent.team() == team.get()) {
-                rows.add(json(tent, available(tent), secondsUntil(tent)));
-            }
-            squads.squadOf(viewer.getUUID()).map(Squad::id).map(outpostsBySquad::get).ifPresent(point -> {
-                if (point.team() == team.get()) {
-                    rows.add(json(point, available(point), secondsUntil(point)));
-                }
-            });
-            return rows;
-        }
+         private JsonArray jsonFor(ServerPlayer viewer) {
+ JsonArray rows = new JsonArray();
+ Optional<TeamColor> team = matches.teamOf(viewer.getUUID());
+ ArenaData arena = matches.arena();
+ TeamColor ownTeam = team.orElse(TeamColor.RED);
+ LocationSpec base = ownTeam == TeamColor.RED ? arena.redSpawn() : arena.blueSpawn();
+ rows.add(json(new RespawnPoint(RespawnKind.BASE, ownTeam, "Base", base, base, 0, 0, 0), true, 0));
+ if (team.isEmpty()) return rows;
+
+ // Only the viewer's team tent is serialized. Enemy team objects stay server-side.
+ tentsByPlayer.values().stream().filter(point -> point.team() == team.get()).findFirst()
+ .ifPresent(point -> rows.add(json(point, available(point), secondsUntil(point))));
+
+ // Exactly one outpost per squad; only members of that squad receive it.
+ squads.squadOf(viewer.getUUID()).map(Squad::id).map(outpostsBySquad::get).ifPresent(point -> {
+ if (point.team() == team.get()) rows.add(json(point, available(point), secondsUntil(point)));
+ });
+ return rows;
+ }
 
         private boolean available(RespawnPoint point) {
             return point.availableAt() <= System.currentTimeMillis();

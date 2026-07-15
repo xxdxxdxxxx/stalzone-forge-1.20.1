@@ -71,3 +71,14 @@ Server action strings: `request_state`, `respawn:<kind>`, `respawn:confirm`, `pi
 - Native TaCZ Forge EventBus adapter for exact hit/kill stats.
 - Fix GitHub Actions workflow (JDK 17) and clean `*.bak`/`*.ps1` from git history.
 - Optional: prettier respawn icon art via baked textures instead of fill-glyphs.
+
+<!-- ZONEWARS_XAERO_HANDOFF_START -->
+## Tactical map / Xaero integration (July 2026)
+
+- CampChat PDA is the authoritative deployment UI. Keep `CampChatMapOverlay` as the PDA overlay entry point.
+- `XaeroWaypointBridge` creates temporary `ZW_*` waypoints only for ZoneWars-owned map objects. It must not leak enemy respawn objects into another team's client state.
+- `ZoneWarsXaeroWaypointMixin` replaces only `ZW_*` waypoint icon rendering with ZoneWars PNG assets. It targets both Xaero 26.3 `WaypointMapRenderer.drawIconOnGUI` overloads; do not restore hard-coded minimap coordinates.
+- Shared icon assets live under `src/main/resources/assets/zonewars/textures/gui/map/`.
+- `local-mods/xaerominimap-dev-26.3.0.jar` is compile-only and ignored by Git.
+- Right-button PDA map drags are canceled to avoid Xaero chunk-selection rectangles.
+<!-- ZONEWARS_XAERO_HANDOFF_END -->

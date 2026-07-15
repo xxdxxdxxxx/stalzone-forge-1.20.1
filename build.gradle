@@ -3,6 +3,7 @@ plugins {
     id 'idea'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+ id 'org.spongepowered.mixin' version '0.7.+'
 }
 
 group = mod_group
@@ -49,3 +50,13 @@ tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
 tasks.named('test', Test).configure { useJUnitPlatform() }
 jar { manifest { attributes(['Specification-Title': mod_id, 'Specification-Version': '1',
                               'Implementation-Title': project.name, 'Implementation-Version': project.jar.archiveVersion]) } }
+
+// Xaero 26.3.0: compile-only support for the ZoneWars client icon mixin.
+dependencies {
+    compileOnly files('local-mods/xaerominimap-dev-26.3.0.jar')
+}
+
+mixin {
+    add sourceSets.main, 'zonewars.refmap.json'
+    config 'zonewars.mixins.json'
+}

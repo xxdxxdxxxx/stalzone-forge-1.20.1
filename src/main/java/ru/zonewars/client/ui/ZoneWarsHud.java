@@ -10,10 +10,13 @@ import net.minecraft.resources.ResourceLocation;
 import ru.zonewars.client.state.ZoneWarsState;
 
 public final class ZoneWarsHud {
+ private static final ResourceLocation ZW_MAP_ICON_BASE = new ResourceLocation("zonewars", "textures/gui/map/base.png");
+ private static final ResourceLocation ZW_MAP_ICON_TENT = new ResourceLocation("zonewars", "textures/gui/map/tent.png");
+ private static final ResourceLocation ZW_MAP_ICON_OUTPOST = new ResourceLocation("zonewars", "textures/gui/map/outpost.png");
 
-    private static final int PANEL = 0xD20B1117;
-    private static final int PANEL_SOFT = 0xA80B1117;
-    private static final int STROKE = 0xA8708190;
+    private static final int PANEL = 0xB80B1117;
+    private static final int PANEL_SOFT = 0x8F0B1117;
+    private static final int STROKE = 0x88708190;
     private static final int TEXT = 0xFFF0F5F8;
     private static final int MUTED = 0xFF9AAAB6;
     private static final int RED = 0xFFFF6670;
@@ -65,65 +68,66 @@ public final class ZoneWarsHud {
         drawHitMarker(graphics, client, snapshot);
     }
 
-    private static void drawTopBar(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
-        int center = graphics.guiWidth() / 2;
-        int yaw = normalizeYaw(client.player.getYRot());
-        drawCompass(graphics, client, center, yaw);
+      private static void drawTopBar(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+ int center = graphics.guiWidth() / 2;
+ int yaw = normalizeYaw(client.player.getYRot());
+ drawCompass(graphics, client, center, yaw);
 
-        int x = center - 194;
-        int y = 36;
-        int width = 388;
-        graphics.fill(x, y, x + width, y + 38, PANEL);
-        graphics.renderOutline(x, y, width, 38, STROKE);
-        graphics.fill(center - 1, y + 5, center + 1, y + 33, 0x557A8995);
+ int x = center - 128;
+ int y = 34;
+ int width = 256;
+ int height = 22;
+ graphics.fill(x, y, x + width, y + height, PANEL);
+ graphics.fill(x, y, center, y + 1, 0xCCB9474F);
+ graphics.fill(center, y, x + width, y + 1, 0xCC4787B8);
+ graphics.renderOutline(x, y, width, height, STROKE);
+ graphics.fill(center - 1, y + 4, center + 1, y + height - 4, 0x557A8995);
+ graphics.drawString(client.font, "RED", x + 12, y + 7, RED, false);
+ graphics.drawCenteredString(client.font, String.valueOf(snapshot.redScore()), center - 43, y + 7, RED);
+ graphics.drawCenteredString(client.font, formatTime(snapshot.seconds()), center, y + 7, TEXT);
+ graphics.drawCenteredString(client.font, String.valueOf(snapshot.blueScore()), center + 43, y + 7, BLUE);
+ graphics.drawString(client.font, "BLUE", x + width - 12 - client.font.width("BLUE"), y + 7, BLUE, false);
+ int count = snapshot.points().size();
+ int gap = 25;
+ int pointStart = center - ((count - 1) * gap) / 2;
+ for (int i = 0; i < count; i++) {
+ ZoneWarsState.PointState point = snapshot.points().get(i);
+ int px = pointStart + i * gap;
+ int py = y + height + 5;
+ int color = pointColor(point);
+ graphics.fill(px - 10, py, px + 10, py + 19, PANEL);
+ graphics.renderOutline(px - 10, py, 20, 19, color);
+ graphics.drawCenteredString(client.font, pointLabel(point), px, py + 5, TEXT);
+ graphics.fill(px - 8, py + 16, px + 8, py + 18, 0xFF28323A);
+ graphics.fill(px - 8, py + 16, px - 8 + Math.round(16 * point.progress() / 100.0f), py + 18, pointFillColor(point));
+ }
+ }
 
-        graphics.drawCenteredString(client.font, String.valueOf(snapshot.redScore()), center - 154, y + 14, RED);
-        graphics.drawCenteredString(client.font, "RED", center - 112, y + 14, RED);
-        graphics.drawCenteredString(client.font, formatTime(snapshot.seconds()), center, y + 12, TEXT);
-        graphics.drawCenteredString(client.font, "BLUE", center + 112, y + 14, BLUE);
-        graphics.drawCenteredString(client.font, String.valueOf(snapshot.blueScore()), center + 154, y + 14, BLUE);
-
-        int count = snapshot.points().size();
-        int pointStart = center - (count * 30 - 6) / 2;
-        for (int i = 0; i < count; i++) {
-            ZoneWarsState.PointState point = snapshot.points().get(i);
-            int px = pointStart + i * 30;
-            int py = y + 44;
-            int color = pointColor(point);
-            graphics.fill(px - 11, py, px + 11, py + 21, PANEL);
-            graphics.renderOutline(px - 11, py, 22, 21, color);
-            graphics.drawCenteredString(client.font, pointLabel(point), px, py + 5, TEXT);
-            graphics.fill(px - 8, py + 16, px + 8, py + 18, 0xFF28323A);
-            graphics.fill(px - 8, py + 16, px - 8 + Math.round(16 * point.progress() / 100.0f), py + 18, pointFillColor(point));
-        }
-    }
-
-    private static int drawSquad(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
-        int x = 16;
-        // Below Xaero's minimap, which occupies the top-left corner by default.
-        int y = 170;
-        int row = 0;
-        for (ZoneWarsState.PlayerState player : snapshot.players()) {
-            if (!player.squad() && !player.self()) {
-                continue;
-            }
-            int top = y + 18 + row * 19;
-            if (row == 0) {
-                graphics.fill(x, y, x + 196, y + 17, PANEL);
-                graphics.renderOutline(x, y, 196, 17, STROKE);
-                graphics.drawString(client.font, "SQUAD", x + 7, y + 5, MUTED, false);
-            }
-            graphics.fill(x, top, x + 196, top + 17, PANEL_SOFT);
-            int color = player.self() ? TEXT : GREEN;
-            graphics.drawString(client.font, trim(player.name(), 16), x + 7, top + 5, color, false);
-            int barX = x + 133;
-            int barY = top + 7;
-            graphics.fill(barX, barY, barX + 55, barY + 4, 0xFF263039);
-            graphics.fill(barX, barY, barX + Math.round(55 * player.health() / 100.0f), barY + 4, healthColor(player.health()));
-            row++;
-        }
-        return y + 18 + row * 19;
-    }
+     private static int drawSquad(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+ int x = 8;
+ int y = 28;
+ int width = 146;
+ int rowHeight = 18;
+ int row = 0;
+ for (ZoneWarsState.PlayerState player : snapshot.players()) {
+ if (!player.squad() && !player.self()) {
+ continue;
+ }
+ int top = y + row * rowHeight;
+ graphics.fill(x, top, x + width, top + 16, PANEL_SOFT);
+ graphics.fill(x, top, x + 2, top + 16, player.self() ? TEXT : GREEN);
+ int color = player.self() ? TEXT : GREEN;
+ graphics.drawString(client.font, trim(player.name(), 14), x + 7, top + 4, color, false);
+ int barX = x + 99;
+ int barY = top + 7;
+ int barWidth = 40;
+ int health = clamp(player.health(), 0, 100);
+ graphics.fill(barX, barY, barX + barWidth, barY + 3, 0xFF263039);
+ graphics.fill(barX, barY, barX + Math.round(barWidth * health / 100.0f), barY + 3, healthColor(health));
+ row++;
+ }
+ return y + row * rowHeight;
+ }
 
     private static void drawKillFeed(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot, int startY) {
         int row = 0;
@@ -172,22 +176,22 @@ public final class ZoneWarsHud {
         graphics.fill(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2), color);
     }
 
-    private static void drawCompass(GuiGraphics graphics, Minecraft client, int center, int yaw) {
-        int width = Math.min(440, Math.max(260, graphics.guiWidth() - 620));
-        int y = 4;
-        graphics.drawCenteredString(client.font, yaw + "\u00B0", center, y, TEXT);
-        graphics.fill(center - width / 2, y + 16, center + width / 2, y + 17, 0x668B9BA8);
-        graphics.fill(center - 1, y + 11, center + 1, y + 22, TEXT);
-        for (int offset = -120; offset <= 120; offset += 15) {
-            int heading = normalizeDegrees(yaw + offset);
-            int x = center + Math.round(offset * (width / 240.0f));
-            int tickHeight = offset % 45 == 0 ? 8 : 4;
-            graphics.fill(x, y + 16, x + 1, y + 16 + tickHeight, 0xAACAD4DC);
-            if (offset % 45 == 0) {
-                graphics.drawCenteredString(client.font, direction(heading), x, y + 24, MUTED);
-            }
-        }
-    }
+     private static void drawCompass(GuiGraphics graphics, Minecraft client, int center, int yaw) {
+ int width = Math.min(430, Math.max(280, graphics.guiWidth() - 650));
+ int y = 2;
+ graphics.drawCenteredString(client.font, yaw + "\u00B0", center, y, TEXT);
+ graphics.fill(center - width / 2, y + 14, center + width / 2, y + 15, 0x4C8B9BA8);
+ graphics.fill(center - 1, y + 10, center + 1, y + 19, 0xDDECF2F5);
+ for (int offset = -120; offset <= 120; offset += 15) {
+ int heading = normalizeDegrees(yaw + offset);
+ int x = center + Math.round(offset * (width / 240.0f));
+ int tickHeight = offset % 45 == 0 ? 5 : 3;
+ graphics.fill(x, y + 14, x + 1, y + 14 + tickHeight, 0x8ECAD4DC);
+ if (offset % 45 == 0) {
+ graphics.drawCenteredString(client.font, direction(heading), x, y + 19, MUTED);
+ }
+ }
+ }
 
     private static void drawHitMarker(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
         ZoneWarsState.HitState hit = snapshot.hit();
@@ -318,14 +322,11 @@ public final class ZoneWarsHud {
 
     private static void drawRoundMiniMap(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
         if (ru.zonewars.client.map.XaeroWaypointBridge.active()) {
-            // Xaero's minimap is installed: let it render the minimap (rotation,
-            // proper terrain, smooth outline). ZoneWars points, respawns and pings
-            // are already mirrored into it as waypoints by XaeroWaypointBridge.
-            return;
-        }
-        int radius = 56;
-        int cx = graphics.guiWidth() - radius - 16;
-        int cy = radius + 22;
+ return;
+ }
+        int radius = 58;
+        int cx = graphics.guiWidth() - radius - 10;
+        int cy = radius + 12;
         double px = client.player.getX();
         double pz = client.player.getZ();
         double range = 40.0;
@@ -379,7 +380,61 @@ public final class ZoneWarsHud {
         graphics.drawCenteredString(client.font, (int) px + " " + (int) pz, cx, cy + radius + 5, MUTED);
     }
 
-    private static void drawSelfArrow(GuiGraphics graphics, Minecraft client, int cx, int cy) {
+    private static void drawXaeroMapIcons(GuiGraphics graphics, Minecraft client, ZoneWarsState.Snapshot snapshot) {
+ int radius = 62;
+ int cx = graphics.guiWidth() - 74;
+ int cy = 74;
+ double range = 80.0;
+ double playerX = client.player.getX();
+ double playerZ = client.player.getZ();
+ for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
+ int[] pos = radarPos(cx, cy, radius, range, playerX, playerZ, respawn.x(), respawn.z());
+ int color = respawn.available() ? teamColor(respawn.team()) : 0xFF687078;
+ drawTintedMapIcon(graphics, respawnTexture(respawn.kind()), pos[0], pos[1], 12, color);
+ if (respawn.kind() != null && respawn.kind().equals(snapshot.selectedRespawn())) {
+ drawMiniSelection(graphics, pos[0], pos[1], 8, 0xC8FFFFFF);
+ }
+ }
+ for (ZoneWarsState.PointState point : snapshot.points()) {
+ int[] pos = radarPos(cx, cy, radius, range, playerX, playerZ, point.x(), point.z());
+ int color = pointColor(point);
+ graphics.fill(pos[0] - 6, pos[1] - 6, pos[0] + 6, pos[1] + 6, 0xD80B1117);
+ graphics.renderOutline(pos[0] - 6, pos[1] - 6, 12, 12, color);
+ graphics.drawCenteredString(client.font, pointLabel(point), pos[0], pos[1] - 4, color);
+ }
+ for (ZoneWarsState.PlayerState player : snapshot.players()) {
+ if (player.self() || !player.squad()) continue;
+ int[] pos = radarPos(cx, cy, radius, range, playerX, playerZ, player.x(), player.z());
+ graphics.fill(pos[0] - 2, pos[1] - 2, pos[0] + 3, pos[1] + 3, GREEN);
+ }
+ }
+ private static ResourceLocation respawnTexture(String kind) {
+ if ("TENT".equals(kind)) return ZW_MAP_ICON_TENT;
+ if ("OUTPOST".equals(kind) || "RALLY".equals(kind)) return ZW_MAP_ICON_OUTPOST;
+ return ZW_MAP_ICON_BASE;
+ }
+ private static void drawTintedMapIcon(GuiGraphics graphics, ResourceLocation texture, int x, int y, int size, int color) {
+ float red = ((color >> 16) & 255) / 255.0f;
+ float green = ((color >> 8) & 255) / 255.0f;
+ float blue = (color & 255) / 255.0f;
+ float alpha = ((color >>> 24) & 255) / 255.0f;
+ com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+ com.mojang.blaze3d.systems.RenderSystem.setShaderColor(red, green, blue, alpha);
+ graphics.blit(texture, x - size / 2, y - size / 2, 0.0f, 0.0f, size, size, 32, 32);
+ com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+ }
+ private static void drawMiniSelection(GuiGraphics graphics, int x, int y, int spread, int color) {
+ int arm = 3;
+ graphics.fill(x - spread, y - spread, x - spread + arm, y - spread + 1, color);
+ graphics.fill(x - spread, y - spread, x - spread + 1, y - spread + arm, color);
+ graphics.fill(x + spread - arm, y - spread, x + spread, y - spread + 1, color);
+ graphics.fill(x + spread - 1, y - spread, x + spread, y - spread + arm, color);
+ graphics.fill(x - spread, y + spread - 1, x - spread + arm, y + spread, color);
+ graphics.fill(x - spread, y + spread - arm, x - spread + 1, y + spread, color);
+ graphics.fill(x + spread - arm, y + spread - 1, x + spread, y + spread, color);
+ graphics.fill(x + spread - 1, y + spread - arm, x + spread, y + spread, color);
+ }
+ private static void drawSelfArrow(GuiGraphics graphics, Minecraft client, int cx, int cy) {
         float yaw = client.player.getYRot() + 180.0f;
         graphics.pose().pushPose();
         graphics.pose().translate((float) cx, (float) cy, 0.0f);

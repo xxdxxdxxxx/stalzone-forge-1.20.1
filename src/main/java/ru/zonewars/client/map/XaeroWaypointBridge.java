@@ -98,40 +98,30 @@ public final class XaeroWaypointBridge {
         }
     }
 
-    private static void sync(Minecraft minecraft, ZoneWarsState.Snapshot snapshot) throws Exception {
-        Object set = currentWaypointSet();
-        if (set == null) {
-            return;
-        }
-        ensureWaypointReflection();
-        String signature = buildSignature(minecraft, snapshot);
-        if (signature.equals(lastSignature)) {
-            return;
-        }
-        lastSignature = signature;
-
-        removeOwned(set);
-        if ("NONE".equals(snapshot.team())) {
-            return;
-        }
-        int y = minecraft.player.getBlockY();
-
-        for (ZoneWarsState.PointState point : snapshot.points()) {
-            String label = pointLabel(point);
-            addOwned(set, point.x(), y, point.z(), label, label, pointColor(point));
-        }
-        for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
-            if (!snapshot.team().equals(respawn.team())) {
-                continue;
-            }
-            String title = respawnTitle(respawn.kind());
-            int color = !respawn.available() ? COLOR_GRAY : ("BASE".equals(respawn.kind()) ? ("RED".equals(respawn.team()) ? COLOR_RED : COLOR_BLUE) : ("TENT".equals(respawn.kind()) ? COLOR_GREEN : COLOR_GOLD));
-            addOwned(set, respawn.x(), y, respawn.z(), title, title.substring(0, 1), color);
-        }
-        for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
-            addOwned(set, marker.x(), y, marker.z(), markerTitle(marker), "!", COLOR_GOLD);
-        }
-    }
+       private static void sync(Minecraft minecraft, ZoneWarsState.Snapshot snapshot) throws Exception {
+ Object set = currentWaypointSet();
+ if (set == null) return;
+ ensureWaypointReflection();
+ String signature = buildSignature(minecraft, snapshot);
+ if (signature.equals(lastSignature)) return;
+ lastSignature = signature;
+ removeOwned(set);
+ if ("NONE".equals(snapshot.team())) return;
+ int y = minecraft.player.getBlockY();
+ for (ZoneWarsState.PointState point : snapshot.points()) {
+ String label = pointLabel(point);
+ addOwned(set, point.x(), y, point.z(), "ZW_POINT_" + label, label, pointColor(point));
+ }
+ for (ZoneWarsState.RespawnState respawn : snapshot.respawns()) {
+ if (!snapshot.team().equals(respawn.team())) continue;
+ int color = !respawn.available() ? COLOR_GRAY : ("RED".equals(respawn.team()) ? COLOR_RED : COLOR_BLUE);
+ String kind = respawn.kind() == null ? "BASE" : respawn.kind().toUpperCase(java.util.Locale.ROOT);
+ addOwned(set, respawn.x(), y, respawn.z(), "ZW_" + kind + "_" + respawn.team(), " ", color);
+ }
+ for (ZoneWarsState.MarkerState marker : snapshot.markers()) {
+ addOwned(set, marker.x(), y, marker.z(), markerTitle(marker), "!", COLOR_GOLD);
+ }
+ }
 
     // ------------------------------------------------------------------ naming
 

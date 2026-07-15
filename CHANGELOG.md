@@ -38,3 +38,14 @@ All notable changes to ZoneWars are documented here.
 - Tactical inventory is not yet a full server-backed drag/drop container.
 - `ZoneWarsForge.java` is still large and should be split gradually.
 - Some STALKER decoration/model issues belong to external mods or packs.
+
+<!-- ZONEWARS_TACTICAL_MAP_CHANGELOG_START -->
+## 2026-07-15 вЂ” Tactical map polish
+
+- Added team-aware Base, Field Tent and Squad Outpost visibility rules.
+- Added one shared tent per team and one outpost per squad.
+- Added PDA deployment selection animation and custom map icons.
+- Replaced ZoneWars Xaero waypoint icon rendering with a dedicated client Mixin.
+- Prevented Xaero chunk-selection drags inside the PDA map.
+- Cleaned development artifacts and documented the local Xaero compile-only dependency.
+<!-- ZONEWARS_TACTICAL_MAP_CHANGELOG_END -->

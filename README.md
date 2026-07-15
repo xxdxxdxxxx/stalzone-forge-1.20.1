@@ -78,3 +78,21 @@ Repository workflow used during development: `apply-*.ps1` scripts (kept out of 
 - Red dotted trail on maps is Xaero's "footprints" feature, not ZoneWars; disable it in Xaero settings or via the config patch in the apply script.
 
 See `PROJECT_CONTEXT.md` for the detailed AI/developer handoff.
+
+<!-- ZONEWARS_TACTICAL_MAP_START -->
+## Tactical map and HUD
+
+ZoneWars uses **CampChat PDA** for the tactical/deployment map and **Xaero's Minimap + World Map 26.3.0** for the in-game minimap.
+
+- **M** opens the PDA map.
+- Respawn points use team-colored Base, Field Tent and Squad Outpost icons.
+- A field tent is shared by all players on the same team; placing a new tent relocates the old team tent.
+- A squad outpost is limited to one per squad and is visible only to squad members.
+- Enemy bases, tents and outposts are not sent to the opposing team's tactical state.
+- The PDA prevents right-button drag chunk selection from Xaero.
+- ZoneWars waypoint icons are rendered through the Xaero renderer, so they follow Xaero zoom, rotation and map-edge clamping.
+
+### Development dependency
+
+The Xaero JAR is used as a local **compile-only** dependency for the ZoneWars client Mixin. It must remain in `local-mods/xaerominimap-dev-26.3.0.jar` on a development machine, but it is ignored by Git and is not distributed with this repository.
+<!-- ZONEWARS_TACTICAL_MAP_END -->
