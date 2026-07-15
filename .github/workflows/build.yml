@@ -15,7 +15,14 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - run: chmod +x gradlew
+      - name: Download Xaero compile dependency
+   run: |
+     mkdir -p local-mods
+     curl --fail --location --retry 3 --retry-delay 2 \
+       https://cdn.modrinth.com/data/1bokaNcj/versions/8s5PDDTU/xaerominimap-forge-1.20.1-26.3.0.jar \
+       --output local-mods/xaerominimap-dev-26.3.0.jar
+     echo "b0e02a88cb7c863085a684e45500dd1a5bd126c7  local-mods/xaerominimap-dev-26.3.0.jar" | sha1sum --check
+ - run: chmod +x gradlew
       - run: ./gradlew clean build --stacktrace
       - uses: actions/upload-artifact@v4
         if: success()
